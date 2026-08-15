@@ -1,0 +1,147 @@
+# ============================================================================
+# FIELD CONFIGURATION
+# ============================================================================
+# The pipeline is 100% location-agnostic. To point it at ANY field on Earth,
+# change only the values below — nothing in src/ needs to change.
+#
+# Sentinel-2 has global revisit coverage (~5 day revisit almost everywhere)
+# and Open-Meteo has global weather + soil-moisture coverage, so this same
+# config file works whether the field is in Iowa, Punjab, Andalusia,
+# the Nile Delta, or anywhere else.
+#
+# The demo values below point at a field in the US Corn Belt (Iowa) purely
+# as a worked example. Swap in your own field's coordinates to run it
+# anywhere in the world.
+# ============================================================================
+
+field:
+  name: "demo_field_iowa_us"          # any identifier you like
+  country: "US"                       # informational only, not used in logic
+  crop: "corn"                        # informational, used later for agronomic thresholds
+
+  # Bounding box in WGS84 (lon/lat), min/max — the area-of-interest (AOI)
+  # for Sentinel-2 tile search and index computation.
+  bbox:
+    min_lon: -93.6250
+    min_lat: 42.0200
+    max_lon: -93.5950
+    max_lat: 42.0400
+
+  # Representative point (field centroid) — used for the point-based
+  # Open-Meteo weather/soil query and the IoT sensor simulation.
+  centroid:
+    lon: -93.6100
+    lat: 42.0300
+
+# ----------------------------------------------------------------------------
+# Time window for the Week-1 ingestion pull
+# ----------------------------------------------------------------------------
+time_range:
+  start_date: "2025-12-01"
+  end_date: "2026-07-01"
+
+# ----------------------------------------------------------------------------
+# Sentinel-2 settings
+# ----------------------------------------------------------------------------
+# Two access providers are supported -- pick one with `provider`:
+#
+#   earth_search : Element-84 STAC over the public AWS 'sentinel-cogs' bucket.
+#                  NO account, NO key -- the COGs are public. Best for getting
+#                  the pipeline running today and for testing. Same S2 L2A data.
+#   copernicus   : Copernicus Data Space STAC (the MANDATED stack for your final
+#                  submission). Direct band reads need CDSE credentials or the
+#                  openEO path (see src/sentinel2_ingest.fetch_indices_timeseries_openeo).
+#
+# Prototype on earth_search, then switch to copernicus before you hand in.
+# ----------------------------------------------------------------------------
+sentinel2:
+  provider: "earth_search"       # "earth_search" (no account) | "copernicus" (mandated)
+  max_cloud_cover_pct: 20
+
+  earth_search:
+    stac_url: "https://earth-search.aws.element84.com/v1"
+    collection: "sentinel-2-l2a"
+    assets:                      # STAC asset keys for each band on Earth Search
+      red: "red"                 # B04
+      nir: "nir"                 # B08
+      blue: "blue"               # B02
+      swir: "swir16"             # B11 -- needed for NDWI (Gao's NIR/SWIR form)
+
+  copernicus:
+    stac_url: "https://catalogue.dataspace.copernicus.eu/stac"
+    collection: "SENTINEL-2"
+    product_type: "S2MSI2A"      # L2A = atmospherically corrected, ready for indices
+    assets:
+      red: "B04"
+      nir: "B08"
+      blue: "B02"
+      swir: "B11"
+
+# ----------------------------------------------------------------------------
+# Open-Meteo settings (no API key required, global coverage)
+# ----------------------------------------------------------------------------
+open_meteo:
+  forecast_base_url: "https://api.open-meteo.com/v1/forecast"
+  archive_base_url: "https://archive-api.open-meteo.com/v1/archive"
+
+  # Variables common to BOTH endpoints.
+  hourly_vars:
+    - "temperature_2m"
+    - "precipitation"
+    - "et0_fao_evapotranspiration"
+
+  # Soil variables differ between the two endpoints:
+  #  - the forecast API exposes shallow bands (0-1, 1-3, 3-9, 9-27 cm)
+  #  - the archive API (ERA5/ERA5-Land) exposes 0-7, 7-28, 28-100, 100-255 cm
+  # The code picks the right set automatically depending on use_archive.
+  soil_vars_forecast:
+    - "soil_moisture_0_to_1cm"
+    - "soil_moisture_1_to_3cm"
+    - "soil_moisture_3_to_9cm"
+    - "soil_moisture_9_to_27cm"
+    - "soil_temperature_0cm"
+  soil_vars_archive:
+    - "soil_moisture_0_to_7cm"
+    - "soil_moisture_7_to_28cm"
+    - "soil_moisture_28_to_100cm"
+    - "soil_moisture_100_to_255cm"
+    - "soil_temperature_0_to_7cm"
+
+  timezone: "auto"
+
+# ----------------------------------------------------------------------------
+# ISMN (International Soil Moisture Network) -- real in-situ sensor data.
+# https://ismn.earth -- free account required, data must be downloaded once
+# from the Data Portal (it's a local-file reader, not a live API call).
+# Leave data_path pointed at a non-existent folder to skip ISMN and fall
+# back to the simulator below.
+# ----------------------------------------------------------------------------
+ismn:
+  data_path: "data/raw/Data_separate_files_header_20250721_20260721_13752_C1W5_20260721.zip"   # path to your extracted ISMN download
+  max_distance_km: 50          # max distance from field centroid to accept a station
+
+# ----------------------------------------------------------------------------
+# Simulated IoT soil-moisture stream — FALLBACK when no ISMN station is
+# configured or none is found within max_distance_km above.
+# (used when the intern has no physical sensor for their chosen field —
+#  explicitly an accepted approach per the project brief)
+# ----------------------------------------------------------------------------
+iot_simulation:
+  n_virtual_sensors: 3            # simulate a small in-field sensor network
+  sensor_depth_cm: [10, 30, 60]   # shallow / root-zone / deep
+  seed_from: "open_meteo"         # seed synthetic series from real soil forecast
+  noise_std_pct: 2.5              # sensor noise as % of volumetric water content
+  dropout_prob: 0.02              # probability of a missing reading per timestep (realism)
+  sampling_interval_minutes: 30
+
+# ----------------------------------------------------------------------------
+# Week-2 alignment -- fuse all sources onto one common daily grid
+# ----------------------------------------------------------------------------
+alignment:
+  freq: "1D"                     # common time grid for the fused table
+  ffill_satellite_days: 10       # carry a satellite index forward up to N days
+                                 # (S2 revisit is ~5 days; keep an ndvi_observed flag)
+
+output:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"

@@ -1,0 +1,13 @@
+numpy>=1.26
+pandas>=2.0
+requests>=2.31
+pyyaml>=6.0
+pystac-client>=0.8
+rasterio>=1.3
+shapely>=2.0
+geopandas>=0.14
+xarray>=2024.1
+python-dotenv>=1.0
+ismn>=1.3
+# openeo>=0.30      # optional: only for the Copernicus openEO Sentinel-2 path
+#                     (see src/sentinel2_ingest.fetch_indices_timeseries_openeo)

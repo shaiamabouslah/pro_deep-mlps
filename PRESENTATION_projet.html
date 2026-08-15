@@ -1,0 +1,377 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Présentation — Agriculture de précision — Projet 12</title>
+<style>
+  :root{
+    --navy:#12314e; --blue:#1d6fb8; --teal:#1b998b; --amber:#c47b1a;
+    --ink:#16222e; --muted:#5a6b7a; --line:#cdd8e2; --bg:#eef2f6; --card:#ffffff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:"Segoe UI",Arial,sans-serif;color:var(--ink);background:#334;}
+  .deck{position:relative;width:100vw;height:100vh;overflow:hidden}
+  .slide{
+    position:absolute;inset:0;display:none;flex-direction:column;
+    padding:52px 64px 60px;background:var(--card);
+  }
+  .slide.active{display:flex}
+  h1{color:var(--navy);font-size:40px;line-height:1.12;margin:0 0 8px}
+  h2{color:var(--navy);font-size:30px;margin:0 0 18px;padding-bottom:10px;border-bottom:3px solid var(--blue)}
+  h3{color:var(--blue);font-size:20px;margin:14px 0 6px}
+  p{font-size:19px;line-height:1.5;margin:6px 0}
+  ul{font-size:19px;line-height:1.5;margin:6px 0;padding-left:22px}
+  li{margin:7px 0}
+  .sub{color:var(--muted);font-size:20px}
+  .tag{display:inline-block;background:#e7eef5;color:var(--navy);border-radius:20px;
+       padding:4px 14px;font-size:14px;font-weight:600;margin:3px 5px 3px 0}
+  table{border-collapse:collapse;width:100%;font-size:16px;margin:8px 0}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#e8eef4;color:var(--navy)}
+  tbody tr:nth-child(even){background:#f6f9fb}
+  .cols{display:flex;gap:26px}
+  .cols>div{flex:1}
+  .card{background:var(--bg);border-radius:10px;padding:14px 18px;border-left:4px solid var(--blue)}
+  .card.teal{border-color:var(--teal)} .card.amber{border-color:var(--amber)}
+  .win{background:#eaf6ec}
+  .flow{display:flex;align-items:stretch;gap:8px;margin:20px 0}
+  .flow .box{flex:1;border:2px solid var(--blue);border-radius:8px;padding:14px 8px;text-align:center;background:#f6f9fb;font-size:15px}
+  .flow .box b{display:block;color:var(--navy);font-size:16px;margin-bottom:5px}
+  .flow .box.soon{opacity:.5;border-color:var(--muted)}
+  .flow .arrow{align-self:center;color:var(--blue);font-size:26px;font-weight:bold}
+  .big{font-size:56px;font-weight:800;color:var(--blue);line-height:1}
+  .kpi{display:flex;gap:22px;margin-top:10px}
+  .kpi .card{flex:1;text-align:center}
+  figure{margin:6px 0;text-align:center}
+  figure img{max-height:56vh;border:1px solid var(--line);border-radius:6px}
+  figcaption{font-size:14px;color:var(--muted);margin-top:6px}
+  .foot{position:absolute;left:64px;right:64px;bottom:20px;display:flex;justify-content:space-between;
+        font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px}
+  .cover{background:linear-gradient(135deg,#12314e,#1d6fb8);color:#fff;justify-content:center}
+  .cover h1{color:#fff;font-size:48px}
+  .cover .sub{color:#dbe8f4}
+  .cover .tag{background:rgba(255,255,255,.16);color:#fff}
+  .nav{position:fixed;bottom:16px;right:20px;z-index:10;display:flex;gap:8px}
+  .nav button{background:var(--navy);color:#fff;border:0;border-radius:6px;padding:8px 12px;font-size:16px;cursor:pointer;opacity:.85}
+  .nav button:hover{opacity:1}
+  .prog{position:fixed;top:0;left:0;height:4px;background:var(--teal);z-index:10;transition:width .2s}
+  .note{background:#fdf3e7;border-left:4px solid var(--amber);padding:10px 16px;font-size:17px;border-radius:6px}
+  .good{color:#2e7d43;font-weight:700}
+  @media print{
+    html,body{background:#fff}
+    .deck{height:auto}
+    .slide{display:flex!important;position:relative;height:100vh;page-break-after:always;border-bottom:1px solid #ccc}
+    .nav,.prog{display:none}
+  }
+</style>
+
+<div class="prog" id="prog"></div>
+<div class="deck" id="deck">
+
+<!-- 1 COVER -->
+<section class="slide cover active">
+  <div class="tag">DEEPSHIFT AI · SUMMER INTERNSHIP 2026 · PROJET 12 — AGRICULTURE</div>
+  <h1>Système agentique d'aide à la décision<br>en agriculture de précision</h1>
+  <p class="sub">Fusion de données satellitaires, météorologiques et de capteurs IoT<br>
+     pour prévoir les besoins en eau et recommander l'irrigation</p>
+  <p class="sub" style="margin-top:38px"><strong>Shaima Bouslah</strong> &nbsp;·&nbsp; Avancement Semaines 1 à 4 &nbsp;·&nbsp; Juillet 2026</p>
+</section>
+
+<!-- 2 PROBLÈME -->
+<section class="slide">
+  <h2>1 · Le problème</h2>
+  <p>Décider <strong>quand irriguer et fertiliser</strong> reste aujourd'hui largement empirique.
+     L'information utile existe, mais elle est <strong>dispersée dans des sources qui ne se parlent pas</strong> :</p>
+  <div class="cols" style="margin-top:14px">
+    <div class="card"><h3>🛰️ Satellite</h3>Voit la <b>plante</b> (vigueur, stress) — mais pas le sol, et seulement par ciel dégagé.</div>
+    <div class="card teal"><h3>🌦️ Météo</h3>Décrit l'<b>atmosphère</b> (pluie, évaporation) — mais pas la parcelle.</div>
+    <div class="card amber"><h3>📟 Capteurs IoT</h3>Mesurent l'<b>eau du sol</b> — mais en un point, sans vue d'ensemble.</div>
+  </div>
+  <p style="margin-top:20px">Chacune est <strong>insuffisante seule</strong>. La valeur naît de leur <strong>fusion</strong>
+     — et d'une <strong>explication</strong> qu'un agriculteur puisse comprendre et contester.</p>
+  <div class="foot"><span>Agriculture de précision — Projet 12</span><span>2</span></div>
+</section>
+
+<!-- 3 OBJECTIF + ROADMAP -->
+<section class="slide">
+  <h2>2 · Objectif et feuille de route (8 semaines)</h2>
+  <p><strong>Objectif final :</strong> un système qui fusionne les trois flux, prévoit les besoins en eau
+     à court terme, et fait produire par un <strong>agent</strong> des recommandations d'irrigation et de
+     fertilisation <strong>expliquées et défendables</strong>.</p>
+  <table style="margin-top:10px">
+    <tr><th>Sem.</th><th>Focus</th><th>Statut</th></tr>
+    <tr class="win"><td>1</td><td>Accès aux données + indices NDVI/EVI/NDWI</td><td>✅ fait</td></tr>
+    <tr class="win"><td>2</td><td>Fusion en une série multi-source alignée</td><td>✅ fait</td></tr>
+    <tr class="win"><td>3</td><td>Modèle de prévision + baselines</td><td>✅ fait</td></tr>
+    <tr class="win"><td>4</td><td>Validation, covariables, gap-filling</td><td>✅ fait</td></tr>
+    <tr><td>5</td><td><b>Agent de fusion (LangGraph)</b></td><td>➡️ prochaine</td></tr>
+    <tr><td>6–8</td><td>Explications · Dashboard + alertes · Validation finale</td><td>à venir</td></tr>
+  </table>
+  <div class="foot"><span>Ce rapport couvre les Semaines 1 à 4</span><span>3</span></div>
+</section>
+
+<!-- 4 ARCHITECTURE -->
+<section class="slide">
+  <h2>3 · Architecture du système</h2>
+  <div class="flow">
+    <div class="box"><b>Sources</b>Sentinel-2<br>Open-Meteo<br>ISMN</div>
+    <div class="arrow">→</div>
+    <div class="box"><b>Semaine 1</b>Ingestion<br>+ indices<br>NDVI/EVI/NDWI</div>
+    <div class="arrow">→</div>
+    <div class="box"><b>Semaine 2</b>Fusion sur<br>grille<br>journalière</div>
+    <div class="arrow">→</div>
+    <div class="box"><b>Semaine 3–4</b>Prévision<br>+ validation</div>
+    <div class="arrow">→</div>
+    <div class="box soon"><b>Sem. 5–8</b>Agent<br>Dashboard</div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>Principe de conception : un code agnostique au lieu</h3>
+    <p style="font-size:18px;margin:4px 0"><strong>Aucune coordonnée n'est écrite en dur.</strong> Toutes les
+    entrées géographiques et temporelles vivent dans un unique fichier de configuration. Faire tourner le
+    pipeline sur une parcelle en Tunisie, en Iowa ou au Pendjab = <strong>changer 4 nombres</strong>, pas le code.</p>
+  </div>
+  <div class="foot"><span>Chaîne linéaire, chaque étape produit un artefact réutilisable</span><span>4</span></div>
+</section>
+
+<!-- 5 DONNÉES -->
+<section class="slide">
+  <h2>4 · Les jeux de données utilisés</h2>
+  <table>
+    <tr><th style="width:18%">Source</th><th>Ce qu'elle apporte</th><th style="width:24%">Volume réel obtenu</th></tr>
+    <tr><td><b>Sentinel-2 L2A</b><br><span class="sub" style="font-size:13px">ESA / Copernicus</span></td>
+        <td>Images multispectrales → indices de végétation NDVI / EVI / NDWI</td>
+        <td><b>21 images</b> exploitables (7 mois, après filtrage nuageux)</td></tr>
+    <tr><td><b>Open-Meteo</b></td>
+        <td>Température, pluie, évapotranspiration (ET₀), humidité du sol modélisée à 4 profondeurs</td>
+        <td><b>5 112</b> relevés horaires</td></tr>
+    <tr><td><b>ISMN</b><br><span class="sub" style="font-size:13px">capteurs réels</span></td>
+        <td>Humidité du sol <b>réellement mesurée</b> — la <b>vérité terrain</b> à prévoir</td>
+        <td><b>5 925</b> mesures, 4 capteurs, station à <b>10,3 km</b></td></tr>
+  </table>
+  <div class="note" style="margin-top:14px">Critère transversal : <strong>tout est gratuit et reproductible</strong> — un tiers peut rejouer l'étude sans budget.</div>
+  <div class="foot"><span>Parcelle d'étude : maïs, Corn Belt (Iowa), déc. 2025 – juil. 2026</span><span>5</span></div>
+</section>
+
+<!-- 6 POURQUOI CELLES-CI -->
+<section class="slide">
+  <h2>5 · Pourquoi celles-ci, et pas d'autres ?</h2>
+  <table>
+    <tr><th style="width:22%">Choix</th><th>Alternative écartée</th><th>Raison</th></tr>
+    <tr><td><b>Sentinel-2</b> (10 m, revisite 5 j)</td><td>Landsat (30 m, revisite 16 j)</td>
+        <td>Résolution 3× plus fine et 3× plus d'images ; niveau L2A déjà corrigé de l'atmosphère.</td></tr>
+    <tr><td><b>Open-Meteo</b></td><td>NASA POWER / API météo payantes</td>
+        <td>Gratuit <b>sans clé</b>, couverture mondiale, et fournit l'ET₀ FAO — la variable clé pour l'irrigation.</td></tr>
+    <tr><td><b>Capteurs ISMN réels</b></td><td>Simulateur IoT seul</td>
+        <td>Une vraie station est à 10 km → on travaille sur de la <b>donnée terrain</b>, pas une approximation. (Le simulateur reste en repli automatique.)</td></tr>
+    <tr><td><b>earth_search</b> (dev)</td><td>Copernicus d'emblée</td>
+        <td>Mêmes images, <b>sans compte</b> → on avance tout de suite. Copernicus (imposé) est câblé pour le rendu final.</td></tr>
+  </table>
+  <div class="foot"><span>Chaque choix justifié = exigence du §6 (stack) et §9 (rigueur)</span><span>6</span></div>
+</section>
+
+<!-- 7 INDICES -->
+<section class="slide">
+  <h2>6 · Semaine 1 — Pourquoi trois indices ?</h2>
+  <p>Principe : une plante saine <b>absorbe le rouge</b> et <b>réfléchit le proche infrarouge</b>. Plus l'écart est grand, plus elle est vigoureuse.</p>
+  <div class="cols" style="margin-top:14px">
+    <div class="card"><h3>NDVI</h3><b>Vigueur</b> du couvert. L'indice de référence — mais il <b>sature</b> en pleine saison.</div>
+    <div class="card teal"><h3>EVI</h3>Même idée, <b>corrigé</b> de la saturation, du sol nu et de l'atmosphère. Reste sensible quand le NDVI plafonne.</div>
+    <div class="card amber"><h3>NDWI</h3>Teneur en <b>eau de la plante</b> → lien direct avec le stress hydrique. Complète les capteurs de sol.</div>
+  </div>
+  <p style="margin-top:18px">Les trois sont <b>complémentaires</b> : vigueur, robustesse en forte biomasse, et eau — ils ne mesurent pas la même chose.</p>
+  <div class="foot"><span>Rouse 1974 · Huete 2002 · Gao 1996</span><span>7</span></div>
+</section>
+
+<!-- 8 FUSION -->
+<section class="slide">
+  <h2>7 · Semaine 2 — La table fusionnée</h2>
+  <div class="cols">
+    <div>
+      <h3>Le problème : 3 horloges incompatibles</h3>
+      <ul>
+        <li><b>Satellite</b> : épars (~1 image / 5 jours)</li>
+        <li><b>Météo</b> : dense (24 valeurs / jour)</li>
+        <li><b>Capteurs</b> : denses et multiples</li>
+      </ul>
+      <h3>La solution</h3>
+      <p>Tout ramener à une <b>grille journalière</b> — l'échelle des décisions d'irrigation.</p>
+    </div>
+    <div>
+      <div class="card teal">
+        <div class="big">213 × 17</div>
+        <p style="margin:6px 0 0"><b>jours × colonnes</b>, sans trou, déc. 2025 → juil. 2026</p>
+      </div>
+      <div class="note" style="margin-top:12px">Garde-fou : une colonne <code>ndvi_observed</code> distingue une <b>vraie</b> observation d'une valeur reportée — le système ne prétend jamais avoir vu ce qu'il a recopié.</div>
+    </div>
+  </div>
+  <div class="foot"><span>Livrable : &lt;parcelle&gt;_aligned_daily.csv</span><span>8</span></div>
+</section>
+
+<!-- 9 PROBLÈME PRÉVISION -->
+<section class="slide">
+  <h2>8 · Semaine 3 — Le problème de prévision</h2>
+  <table>
+    <tr><th style="width:32%">Variable à prévoir</th><td>Humidité du sol mesurée (capteurs réels ISMN)</td></tr>
+    <tr><th>Horizon</th><td>14 jours</td></tr>
+    <tr><th>Protocole</th><td>Les 14 derniers jours mis de côté (jamais vus). Entraînement sur les 199 précédents.</td></tr>
+    <tr><th>Entrées</th><td>Historique de l'humidité seul → approche <b>univariée</b> (1<sup>er</sup> palier)</td></tr>
+  </table>
+  <div class="card amber" style="margin-top:18px">
+    <p style="margin:0;font-size:18px"><b>Contrainte dominante :</b> seulement <b>199 points</b> d'entraînement.
+    C'est très peu — d'où le choix de modèles <b>pré-entraînés</b> qui prédisent sans apprentissage sur nos données.</p>
+  </div>
+  <div class="foot"><span>Cible = la vérité terrain construite en Phase 1</span><span>9</span></div>
+</section>
+
+<!-- 10 MODÈLES -->
+<section class="slide">
+  <h2>9 · Les modèles comparés — et pourquoi</h2>
+  <p>Stratégie : <b>trois familles différentes</b> plutôt que trois variantes — une comparaison entre familles est bien plus instructive.</p>
+  <table style="margin-top:8px">
+    <tr><th>Modèle</th><th>Famille</th><th>Entraîné ?</th><th>Pourquoi l'inclure</th></tr>
+    <tr><td><b>Chronos-2</b><br><span class="sub" style="font-size:12px">Amazon, 120 M</span></td><td>Fondation</td><td>Non (zéro-shot)</td>
+        <td>Le plus mature ; gère nativement les covariables ; fournit une incertitude.</td></tr>
+    <tr><td><b>TimesFM</b><br><span class="sub" style="font-size:12px">Google, 200 M</span></td><td>Fondation</td><td>Non (zéro-shot)</td>
+        <td>Autre architecture → teste si un résultat tient à la famille ou au modèle.</td></tr>
+    <tr><td><b>N-HiTS</b></td><td>Deep supervisé</td><td>Oui</td>
+        <td>Baseline de référence : mesure ce qu'on gagne en entraînant sur la parcelle.</td></tr>
+    <tr><td><b>Saisonnier naïf</b></td><td>Référence</td><td>Non</td>
+        <td>Répète la dernière semaine. <b>Indispensable</b> : un modèle qui ne le bat pas n'apporte rien.</td></tr>
+  </table>
+  <div class="foot"><span>Stack imposé §6 : Chronos-2 / TimesFM + TFT / N-HiTS</span><span>10</span></div>
+</section>
+
+<!-- 11 MÉTRIQUES -->
+<section class="slide">
+  <h2>10 · Les métriques d'évaluation</h2>
+  <div class="cols">
+    <div>
+      <div class="card"><h3>RMSE</h3>Erreur dans l'unité physique (m³/m³). Directement interprétable.</div>
+      <div class="card teal" style="margin-top:10px"><h3>sMAPE</h3>Erreur relative en %, symétrique.</div>
+    </div>
+    <div>
+      <div class="card amber"><h3>MASE</h3>Erreur rapportée à une prévision naïve. <b>⚠️ ≫ 1 est normal ici</b> (voir note).</div>
+      <div class="card" style="margin-top:10px;border-color:var(--teal)"><h3>CRPS</h3>Qualité de la <b>distribution</b> prédite (incertitude), pas seulement du point central.</div>
+    </div>
+  </div>
+  <div class="note" style="margin-top:16px"><b>Lire le MASE :</b> il divise l'erreur à 14 jours par celle d'une prévision naïve à 1 jour. L'humidité bougeant peu au jour le jour, ce dénominateur est minuscule → MASE très supérieur à 1, <b>ce qui est normal</b>. Seul le <b>classement relatif</b> compte.</div>
+  <div class="foot"><span>Métriques imposées au §9</span><span>11</span></div>
+</section>
+
+<!-- 12 RÉSULTATS -->
+<section class="slide">
+  <h2>11 · Résultats — qui gagne ?</h2>
+  <table>
+    <tr><th>Modèle</th><th>MASE</th><th>sMAPE</th><th>RMSE</th><th>CRPS</th></tr>
+    <tr class="win"><td><b>🏆 TimesFM</b></td><td><b>4,58</b></td><td><b>11,44</b></td><td><b>0,0517</b></td><td><b>0,0349</b></td></tr>
+    <tr><td>Saisonnier naïf</td><td>4,91</td><td>12,13</td><td>0,0615</td><td>0,0476</td></tr>
+    <tr><td>Chronos-2</td><td>5,09</td><td>12,57</td><td>0,0613</td><td>0,0427</td></tr>
+    <tr><td>N-HiTS</td><td>7,11</td><td>16,74</td><td>0,0921</td><td>0,0689</td></tr>
+  </table>
+  <div class="cols" style="margin-top:12px">
+    <div class="card"><b>TimesFM domine</b> les 4 métriques — seul à battre le naïf partout (≈ 16 % de RMSE en moins).</div>
+    <div class="card teal"><b>Le CRPS reclasse</b> : Chronos-2 bat le naïf en incertitude alors qu'il est derrière en MASE → sa <b>calibration</b> est meilleure.</div>
+    <div class="card amber"><b>N-HiTS dernier</b> : le seul modèle <i>entraîné</i> est le plus faible.</div>
+  </div>
+  <div class="note" style="margin-top:12px">⚠️ Résultat sur <b>une seule fenêtre</b> → confirmé par le <b>backtest glissant</b> de la Semaine 4 avant conclusion définitive.</div>
+  <div class="foot"><span>Horizon 14 jours, univarié</span><span>12</span></div>
+</section>
+
+<!-- 13 FIGURE / INSIGHT -->
+<section class="slide">
+  <h2>12 · L'enseignement clé</h2>
+  <figure>
+    <img src="data/processed/forecast_comparison.png" alt="Prévisions vs réel">
+    <figcaption>Historique (gris) · réel sur les 14 jours test (noir) · prévisions (pointillés) · bande 10–90 % de Chronos-2.</figcaption>
+  </figure>
+  <div class="note"><b>Aucun modèle n'anticipe la chute d'humidité</b> (noir : 0,44 → 0,32). En univarié, ils ne voient que le passé — pas la <b>pluie future</b> qui pilote l'assèchement. TimesFM gagne surtout parce qu'il prédit le plus bas. <b>→ Le facteur limitant est l'information, pas le modèle.</b></div>
+  <div class="foot"><span>Conclusion honnête et défendable pour le rapport</span><span>13</span></div>
+</section>
+
+<!-- 14 SEMAINE 4 -->
+<section class="slide">
+  <h2>13 · Semaine 4 — Validation</h2>
+  <div class="cols">
+    <div class="card"><h3>① Backtest glissant</h3>Rejoue les 4 modèles sur 6–8 fenêtres → moyenne <b>et écart-type</b>. Désigne le gagnant de façon <b>robuste</b> (pas un coup de chance).</div>
+    <div class="card teal"><h3>② Covariables</h3>Injecte pluie, ET₀, température, NDVI dans Chronos-2 et N-HiTS. <b>Le levier</b> identifié par la figure précédente.</div>
+    <div class="card amber"><h3>③ Gap-filling</h3>Comble les trous capteurs avec Chronos-2 zéro-shot vs interpolation (imposé §5.2).</div>
+  </div>
+  <div class="note" style="margin-top:18px"><b>Honnêteté :</b> l'étude covariables utilise la vraie météo du test comme « prévision parfaite » → le gain mesuré est une <b>borne haute optimiste</b>. À écrire explicitement.</div>
+  <div class="foot"><span>« Forecast accuracy measured; synthetic gap-filling in place »</span><span>14</span></div>
+</section>
+
+<!-- 15 PROCHAINE ÉTAPE -->
+<section class="slide">
+  <h2>14 · Prochaine étape — l'agent de fusion (Semaine 5)</h2>
+  <div class="flow">
+    <div class="box"><b>Entrées</b>Indices NDVI/EVI<br>Météo prévue<br>Humidité prévue</div>
+    <div class="arrow">→</div>
+    <div class="box" style="border-color:var(--teal)"><b>Agent LangGraph</b>(ReAct)<br>raisonne &amp; fusionne<br>les signaux</div>
+    <div class="arrow">→</div>
+    <div class="box" style="border-color:var(--amber)"><b>Sortie</b>Recommandation<br>irrigation / fertilisation<br>+ <b>explication</b></div>
+  </div>
+  <ul style="margin-top:14px">
+    <li>Un agent qui transforme des signaux hétérogènes en une <b>recommandation défendable et traçable</b>.</li>
+    <li>Chaque conseil relié aux signaux d'entrée qui l'ont motivé (le cœur de la « nouveauté » du projet).</li>
+    <li>Évalué façon <b>GeoBenchX</b> (tâches multi-étapes géospatiales).</li>
+  </ul>
+  <p style="margin-top:8px">La série alignée + le prévisionniste validés en Semaines 1–4 sont exactement les <b>entrées</b> de cet agent.</p>
+  <div class="foot"><span>Puis Semaine 7 : dashboard cartographique + alertes</span><span>15</span></div>
+</section>
+
+<!-- 16 SYNTHÈSE -->
+<section class="slide">
+  <h2>15 · Synthèse et statut</h2>
+  <div class="cols">
+    <div>
+      <h3 class="good">✅ Fait (Semaines 1–4)</h3>
+      <ul>
+        <li>Ingestion 3 sources <b>réelles</b> + indices</li>
+        <li>Table fusionnée 213 j × 17 col.</li>
+        <li>Prévision + 4 baselines, 4 métriques</li>
+        <li>Backtest, covariables, gap-filling</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="color:var(--amber)">⏳ Reste</h3>
+      <ul>
+        <li><b>Note état-de-l'art</b> (obligatoire, Phase 1)</li>
+        <li>Agent de fusion (S5) + explications (S6)</li>
+        <li>Dashboard + alertes (S7)</li>
+        <li>Validation finale + rapport (S8)</li>
+      </ul>
+    </div>
+  </div>
+  <div class="kpi">
+    <div class="card"><div class="big">100 %</div>données réelles &amp; gratuites</div>
+    <div class="card teal"><div class="big">0 €</div>aucun service payant</div>
+    <div class="card amber"><div class="big">1 fichier</div>pour changer de parcelle</div>
+  </div>
+  <div class="foot"><span>Reproductible : 3 commandes rejouent tout</span><span>16</span></div>
+</section>
+
+</div>
+
+<div class="nav">
+  <button onclick="go(-1)">◀</button>
+  <button onclick="go(1)">▶</button>
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0;
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    document.getElementById('prog').style.width=((i+1)/slides.length*100)+'%';
+  }
+  function go(d){show(i+d)}
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown')go(1);
+    if(e.key==='ArrowLeft'||e.key==='PageUp')go(-1);
+    if(e.key==='Home')show(0); if(e.key==='End')show(slides.length-1);
+  });
+  document.getElementById('deck').addEventListener('click',e=>{
+    if(e.target.closest('.nav'))return;
+    go(e.clientX > window.innerWidth/2 ? 1 : -1);
+  });
+  show(0);
+</script>

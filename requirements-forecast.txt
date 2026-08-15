@@ -1,0 +1,21 @@
+# Week-3 forecasting dependencies -- install ON TOP of requirements.txt
+#   pip install -r requirements.txt
+#   pip install -r requirements-forecast.txt
+#
+# CPU is enough for ~200 daily points. The install is the heavy part (PyTorch +
+# downloaded model weights), not the run. Each foundation model is optional:
+# if one won't install, src/forecast.py skips it and compares the rest.
+
+torch>=2.2                    # backend for N-HiTS, Chronos, TimesFM
+neuralforecast>=1.7          # N-HiTS  (supervised baseline)
+chronos-forecasting>=2.0     # Chronos-2  (foundation, zero-shot, covariate-capable)
+matplotlib>=3.7              # forecast vs actual figure
+
+# --- TimesFM (foundation, zero-shot) -- version-sensitive on Windows ---------
+# Try:
+#   pip install timesfm[torch]
+# If it fails to install/import, that's fine: forecast.py will skip TimesFM and
+# still compare Chronos + N-HiTS + seasonal-naive.
+
+# --- Optional: run Chronos-2 specifically via AutoGluon ----------------------
+# pip install "autogluon.timeseries>=1.2"
