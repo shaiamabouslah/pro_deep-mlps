@@ -1,0 +1,75 @@
+field:
+  name: zone_36p7455_9p2395
+  country: US
+  crop: corn
+  bbox:
+    min_lon: 9.22545
+    min_lat: 36.7342
+    max_lon: 9.25355
+    max_lat: 36.75672
+  centroid:
+    lon: 9.2395
+    lat: 36.74546
+time_range:
+  start_date: '2026-04-27'
+  end_date: '2026-08-25'
+sentinel2:
+  provider: earth_search
+  max_cloud_cover_pct: 15
+  earth_search:
+    stac_url: https://earth-search.aws.element84.com/v1
+    collection: sentinel-2-l2a
+    assets:
+      red: red
+      nir: nir
+      blue: blue
+      swir: swir16
+  copernicus:
+    stac_url: https://catalogue.dataspace.copernicus.eu/stac
+    collection: SENTINEL-2
+    product_type: S2MSI2A
+    assets:
+      red: B04
+      nir: B08
+      blue: B02
+      swir: B11
+  max_scenes: 10
+open_meteo:
+  forecast_base_url: https://api.open-meteo.com/v1/forecast
+  archive_base_url: https://archive-api.open-meteo.com/v1/archive
+  hourly_vars:
+  - temperature_2m
+  - precipitation
+  - et0_fao_evapotranspiration
+  soil_vars_forecast:
+  - soil_moisture_0_to_1cm
+  - soil_moisture_1_to_3cm
+  - soil_moisture_3_to_9cm
+  - soil_moisture_9_to_27cm
+  - soil_temperature_0cm
+  soil_vars_archive:
+  - soil_moisture_0_to_7cm
+  - soil_moisture_7_to_28cm
+  - soil_moisture_28_to_100cm
+  - soil_moisture_100_to_255cm
+  - soil_temperature_0_to_7cm
+  timezone: auto
+ismn:
+  data_path: data/raw/__no_station__
+  max_distance_km: 50
+iot_simulation:
+  n_virtual_sensors: 3
+  sensor_depth_cm:
+  - 10
+  - 30
+  - 60
+  seed_from: open_meteo
+  noise_std_pct: 2.5
+  dropout_prob: 0.02
+  sampling_interval_minutes: 30
+alignment:
+  freq: 1D
+  ffill_satellite_days: 10
+output:
+  raw_dir: data/raw
+  processed_dir: data/processed

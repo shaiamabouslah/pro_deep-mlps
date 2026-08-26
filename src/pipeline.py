@@ -1,24 +1,7 @@
-"""
-Phase-1 pipeline orchestrator (Weeks 1-2).
-
-Runs the full ingestion + index-computation + multi-source ALIGNMENT
-deliverable end to end for whichever field is defined in
-config/field_config.yaml:
+"""Ingestion and alignment pipeline: runs the multi-source ingestion (Sentinel-2, Open-Meteo,
+soil) and produces one aligned daily table for the configured field.
 
     python -m src.pipeline --config config/field_config.yaml
-
-Week 1 output : Sentinel-2 index series + weather/soil + IoT/ISMN soil moisture.
-Week 2 output : one clean, aligned daily multi-source table for the field
-                (data/processed/<field>_aligned_daily.csv).
-
-Because every geographic input comes from that config file, running this
-against a field in Iowa vs. Andalusia vs. Punjab vs. anywhere else is a
-one-line change to the YAML -- no code edits.
-
-Network note: Sentinel-2 (STAC + COGs) and Open-Meteo calls require internet
-egress. Run this from an environment with normal internet access (your laptop,
-a cloud VM) -- not from a network-restricted sandbox. For a fully offline
-end-to-end smoke test, run `python demo_offline.py` instead.
 """
 from __future__ import annotations
 
@@ -28,7 +11,7 @@ import logging
 from .align import run_alignment
 from .config_loader import load_config
 from .ismn_ingest import run_ismn_ingestion
-from .iot_simulator import run_iot_simulation
+from .iot_simulator import run_iot_simulation, run_modeled_soil_source
 from .sentinel2_ingest import run_sentinel2_ingestion
 from .weather_ingest import fetch_weather_and_soil
 
@@ -36,9 +19,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
-def run_week1_pipeline(config_path: str) -> dict:
+def run_pipeline(config_path: str) -> dict:
     cfg = load_config(config_path)
-    logger.info("=== Phase-1 pipeline (Weeks 1-2): field '%s' ===", cfg.name)
+    logger.info("=== Pipeline: field '%s' ===", cfg.name)
 
     results: dict = {}
     weather_path = soil_path = satellite_path = None
@@ -63,29 +46,47 @@ def run_week1_pipeline(config_path: str) -> dict:
         logger.error("[FAILED] ISMN ingestion: %s", e)
         ismn_path = None
 
+    # Tiered soil source (best available first):
+    #   1. real ISMN station (ground truth) -> for validation fields
+    #   2. Open-Meteo MODELLED soil moisture (global, no station needed) -> DEFAULT fallback
+    #   3. simulator seeded from Open-Meteo -> only if explicitly asked (stress-tests / offline)
+    fallback = str(cfg.raw.get("soil", {}).get("fallback", "modeled")).lower()
+
     if ismn_path is not None:
         soil_path = ismn_path
         results["iot_soil_moisture"] = str(ismn_path)
         results["iot_source"] = "ismn_real"
-        logger.info("[OK] Real ISMN station used -> %s", ismn_path)
+        logger.info("[OK] Tier 1: real ISMN station used -> %s", ismn_path)
     else:
-        try:
-            seed_series = None
-            if weather_df is not None:
-                # pick whatever soil-moisture column exists (names differ between
-                # the forecast and archive Open-Meteo endpoints)
-                soil_cols = [c for c in weather_df.columns if c.startswith("soil_moisture_")]
-                if soil_cols:
-                    seed_series = weather_df.set_index("time")[soil_cols[0]]
-            iot_path = run_iot_simulation(cfg, real_soil_series=seed_series)
-            soil_path = iot_path
-            results["iot_soil_moisture"] = str(iot_path)
-            results["iot_source"] = "simulated"
-            logger.info("[OK] No ISMN station configured/nearby -- simulator used -> %s", iot_path)
-        except Exception as e:
-            logger.error("[FAILED] IoT simulation: %s", e)
-            results["iot_soil_moisture"] = None
-            results["iot_source"] = None
+        modeled_path = None
+        if weather_df is not None and fallback != "simulated":
+            try:
+                modeled_path = run_modeled_soil_source(cfg, weather_df)
+            except Exception as e:
+                logger.error("[FAILED] Modelled soil source: %s", e)
+
+        if modeled_path is not None:
+            soil_path = modeled_path
+            results["iot_soil_moisture"] = str(modeled_path)
+            results["iot_source"] = "open_meteo_modeled"
+            logger.info("[OK] Tier 2: no ISMN station -- using Open-Meteo MODELLED soil moisture "
+                        "(global coverage) -> %s", modeled_path)
+        else:
+            try:
+                seed_series = None
+                if weather_df is not None:
+                    soil_cols = [c for c in weather_df.columns if c.startswith("soil_moisture_")]
+                    if soil_cols:
+                        seed_series = weather_df.set_index("time")[soil_cols[0]]
+                iot_path = run_iot_simulation(cfg, real_soil_series=seed_series)
+                soil_path = iot_path
+                results["iot_soil_moisture"] = str(iot_path)
+                results["iot_source"] = "simulated"
+                logger.info("[OK] Tier 3: simulator (seeded from Open-Meteo) used -> %s", iot_path)
+            except Exception as e:
+                logger.error("[FAILED] IoT simulation: %s", e)
+                results["iot_soil_moisture"] = None
+                results["iot_source"] = None
 
     # 3. Sentinel-2 scenes + vegetation/stress index TIME SERIES
     try:
@@ -96,7 +97,7 @@ def run_week1_pipeline(config_path: str) -> dict:
         logger.error("[FAILED] Sentinel-2 ingestion: %s", e)
         results["sentinel2_indices"] = None
 
-    # 4. WEEK-2 DELIVERABLE: fuse everything into one clean aligned daily table
+    # 4. Fuse everything into one clean aligned daily table
     try:
         aligned_path = run_alignment(
             cfg,
@@ -110,18 +111,18 @@ def run_week1_pipeline(config_path: str) -> dict:
         logger.error("[FAILED] Alignment step: %s", e)
         results["aligned_daily"] = None
 
-    logger.info("=== Phase-1 pipeline complete for '%s' ===", cfg.name)
+    logger.info("=== Pipeline complete for '%s' ===", cfg.name)
     return results
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Phase-1 (Weeks 1-2) multi-source pipeline")
+    parser = argparse.ArgumentParser(description="Multi-source ingestion and alignment pipeline")
     parser.add_argument(
         "--config", default="config/field_config.yaml",
         help="Path to a field config YAML (change this to point at any field worldwide)",
     )
     args = parser.parse_args()
-    results = run_week1_pipeline(args.config)
+    results = run_pipeline(args.config)
 
     print("\n--- Pipeline outputs ---")
     for k, v in results.items():

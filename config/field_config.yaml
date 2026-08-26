@@ -117,7 +117,9 @@ open_meteo:
 # back to the simulator below.
 # ----------------------------------------------------------------------------
 ismn:
-  data_path: "data/raw/Data_separate_files_header_20250721_20260721_13752_C1W5_20260721.zip"   # path to your extracted ISMN download
+  # The `ismn` package reads a downloaded ISMN archive directly — pointing at the
+  # .zip works (no manual extraction needed) or point at an extracted folder.
+  data_path: "data/raw/Data_separate_files_header_20250721_20260721_13752_C1W5_20260721.zip"
   max_distance_km: 50          # max distance from field centroid to accept a station
 
 # ----------------------------------------------------------------------------

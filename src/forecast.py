@@ -1,33 +1,8 @@
-"""
-Week-3 deliverable: short-horizon soil-moisture forecaster + baseline comparison.
+"""Short-horizon soil-moisture forecaster.
 
-Compares the models mandated by the brief (§6):
-  * Chronos-2   -- time-series FOUNDATION model, zero-shot (no training)
-  * TimesFM     -- second foundation model, zero-shot
-  * N-HiTS      -- supervised deep-learning baseline (trained on your field)
-  * seasonal-naive -- the reference every forecaster must beat
+Compares foundation models (Chronos-2, TimesFM) with a supervised baseline (N-HiTS)
+and a seasonal-naive reference. Metrics: MASE, sMAPE, RMSE, CRPS (lower is better).
 
-Target: `soil_moisture_sensor_mean` from data/processed/<field>_aligned_daily.csv
-(the real ISMN sensor series built in Phase 1). This pass is UNIVARIATE; adding
-the weather/NDVI covariates is the documented next step (Chronos-2 and TimesFM
-both support them natively).
-
-Metrics (brief §9): MASE, sMAPE, RMSE and **CRPS** (probabilistic). Lower = better.
-
-  How to read MASE: it scales the h-step-ahead error by the in-sample ONE-step
-  naive error. Soil moisture barely moves day to day, so that denominator is
-  tiny and MASE >> 1 is NORMAL at h=14. Compare models against each other and
-  against the `seasonal_naive` row -- not against 1.
-
-  How CRPS is computed: for probabilistic models we request the 9 deciles and
-  use the standard pinball (quantile-loss) approximation of CRPS. For a
-  deterministic forecast the distribution is degenerate, and CRPS reduces
-  exactly to the MAE -- that's what we report, clearly flagged.
-
-Outputs (to data/processed/): forecast_metrics.csv, forecast_predictions.csv,
-forecast_comparison.png
-
-Usage:
     python -m src.forecast --config config/field_config.yaml --horizon 14
 """
 from __future__ import annotations
@@ -71,7 +46,7 @@ def split(series: pd.Series, horizon: int):
 
 
 # ---------------------------------------------------------------------------
-# metrics (brief §9)
+# metrics
 # ---------------------------------------------------------------------------
 def rmse(y, yhat) -> float:
     return float(np.sqrt(np.mean((np.asarray(y) - np.asarray(yhat)) ** 2)))
@@ -167,8 +142,8 @@ def _extract_quantiles(pred_df: pd.DataFrame, horizon: int):
 
 def run_chronos(train: pd.Series, horizon: int, model_id: str = "amazon/chronos-2"):
     """
-    Chronos-2 (Amazon) -- the foundation model mandated by the brief. 120M params,
-    zero-shot, CPU-friendly, natively supports covariates (Week-4 extension).
+    Chronos-2 (Amazon) -- a time-series foundation model. 120M params,
+    zero-shot, CPU-friendly, natively supports covariates.
     API: chronos-forecasting >= 2.0 -> Chronos2Pipeline.predict_df().
     """
     from chronos import Chronos2Pipeline
@@ -347,7 +322,7 @@ def run_comparison(csv_path, horizon: int, out_dir) -> pd.DataFrame:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Week-3 soil-moisture forecaster comparison")
+    parser = argparse.ArgumentParser(description="Soil-moisture forecaster comparison")
     parser.add_argument("--config", default="config/field_config.yaml")
     parser.add_argument("--horizon", type=int, default=14, help="forecast horizon in days")
     args = parser.parse_args()

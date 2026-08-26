@@ -1,38 +1,9 @@
-"""
-Sentinel-2 L2A ingestion -> a per-date field-level NDVI/EVI/NDWI time series.
+"""Sentinel-2 L2A ingestion: builds a per-date, field-level NDVI/EVI/NDWI series.
 
-Global coverage: Sentinel-2 images the entire land surface of the Earth on a
-~5 day revisit cycle, so this module places NO assumption about which
-continent/country the field is in. Everything location-specific comes from
-config/field_config.yaml's bbox.
-
-Two data-access paths are supported (pick one via `sentinel2.provider` in the
-config):
-
-  * "earth_search"  (DEFAULT, dev-friendly)
-      Element-84 Earth Search STAC over the public AWS "sentinel-cogs" bucket.
-      No account, no key -- the COGs are public. Great for getting the pipeline
-      running *today* and for testing. Same Sentinel-2 L2A data as Copernicus.
-
-  * "copernicus"    (the mandated-stack path for your final submission)
-      Copernicus Data Space STAC. Reading individual bands from CDSE requires
-      either their S3 (eodata) credentials or, more cleanly, the openEO service
-      (`fetch_indices_timeseries_openeo` below). The project brief mandates the
-      Copernicus stack, so switch to this before you hand in -- but you can
-      prototype everything on "earth_search" first.
-
-What "a field-level index time series" means here:
-  For each cloud-filtered scene, we read the four bands (red/nir/blue/swir)
-  clipped to the field bbox, take the spatial MEAN of each band over the field,
-  then compute NDVI/EVI/NDWI from those means. That gives one (date -> index)
-  row per scene -- exactly the sparse satellite series that Week-2's alignment
-  step (src/align.py) merges with the dense weather/soil series.
-
-  (Computing the index from band-means is the standard field-level aggregation
-  and sidesteps the fact that S2 bands live on different resolution grids -- 10m
-  for red/nir/blue, 20m for swir. If you later want per-pixel index *maps*,
-  resample the bands to a common grid first; `compute_indices_for_scene` already
-  takes aligned arrays for that.)
+Bands are read over the field bounding box from a STAC provider (public AWS earth_search
+by default, or Copernicus). Cloud, shadow and cirrus pixels are removed using the Scene
+Classification Layer (SCL), and the clear-pixel means give one row of indices per usable
+scene.
 """
 from __future__ import annotations
 
@@ -88,7 +59,26 @@ def active_s2_config(cfg: FieldConfig) -> dict:
         "collection": sub.get("collection") or (s2.get("collection") if provider == "copernicus" else None) or preset["collection"],
         "assets": assets,
         "max_cloud_cover_pct": s2.get("max_cloud_cover_pct", 20),
+        # cap how many scenes we actually READ bands for (each scene = 4 remote
+        # band reads). Reading 50 large scenes can take an hour; ~12 evenly
+        # spread across the season gives a fine NDVI series in a few minutes.
+        "max_scenes": int(s2.get("max_scenes", 12)),
     }
+
+
+def subsample_scenes(items: list[dict], max_scenes: int) -> list[dict]:
+    """Keep at most `max_scenes`, evenly spread across time, so the NDVI series
+    still spans the whole window but we read far fewer scenes."""
+    if max_scenes <= 0 or len(items) <= max_scenes:
+        return items
+    ordered = sorted(items, key=lambda it: (it.get("properties", {}) or {}).get("datetime", ""))
+    idx = np.linspace(0, len(ordered) - 1, max_scenes).round().astype(int)
+    seen, picked = set(), []
+    for i in idx:
+        if i not in seen:
+            seen.add(i)
+            picked.append(ordered[i])
+    return picked
 
 
 def get_access_token(client_id: str, client_secret: str) -> str:
@@ -172,6 +162,10 @@ def _gdal_env(provider: str, token: str | None) -> dict:
         "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif,.tiff,.jp2",
         "GDAL_HTTP_MULTIRANGE": "YES",
         "GDAL_HTTP_MERGE_CONSECUTIVE_RANGES": "YES",
+        # auto-retry flaky COG reads instead of failing the scene outright
+        "GDAL_HTTP_MAX_RETRY": "3",
+        "GDAL_HTTP_RETRY_DELAY": "1",
+        "GDAL_HTTP_TIMEOUT": "30",
     }
     if provider == "earth_search":
         env.update({"AWS_NO_SIGN_REQUEST": "YES", "AWS_REGION": "us-west-2"})
@@ -203,50 +197,170 @@ def read_band_mean_over_bbox(href: str, bbox: tuple[float, float, float, float])
     return float(arr[valid].mean())
 
 
+def _read_band_array(href: str, bbox: tuple[float, float, float, float],
+                     out_shape: tuple[int, int] | None = None, cap: int = 256):
+    """
+    Read a band COG clipped to the field bbox as a 2-D array. If out_shape is
+    given, resample to it (so all bands of a scene land on ONE common pixel grid
+    despite 10 m vs 20 m native resolutions); otherwise derive it from the
+    window, capped to `cap` px per side to keep reads small and fast.
+    Returns (array, out_shape).
+    """
+    import rasterio
+    from rasterio.enums import Resampling
+    from rasterio.warp import transform_bounds
+    from rasterio.windows import from_bounds
+
+    with rasterio.open(_href_to_gdal_path(href)) as src:
+        left, bottom, right, top = transform_bounds("EPSG:4326", src.crs, *bbox)
+        window = from_bounds(left, bottom, right, top, transform=src.transform)
+        if out_shape is None:
+            h, w = max(1, int(round(window.height))), max(1, int(round(window.width)))
+            if max(h, w) > cap:
+                s = cap / max(h, w)
+                h, w = max(1, int(h * s)), max(1, int(w * s))
+            out_shape = (h, w)
+        arr = src.read(1, window=window, out_shape=out_shape, boundless=True,
+                       fill_value=0, resampling=Resampling.nearest).astype("float32")
+    return arr, out_shape
+
+
+# Sentinel-2 Scene Classification (SCL) codes to KEEP (clear land/water/snow).
+# Dropped: 0 no-data, 1 defective, 2 dark-shadow, 3 cloud-shadow, 8 cloud-med,
+# 9 cloud-high, 10 thin-cirrus.
+_SCL_KEEP = {4, 5, 6, 7, 11}  # 4 veg, 5 bare, 6 water, 7 unclassified, 11 snow
+
+
 def read_scene_indices(item: dict, cfg: FieldConfig) -> dict | None:
     """
-    For one STAC scene, read the four band means over the field bbox and turn
-    them into field-level NDVI/EVI/NDWI. Returns None if the bands can't be read
-    (e.g. asset missing, no valid pixels) so the caller can skip the scene
-    without failing the whole pipeline.
+    For one STAC scene, read the bands over the field bbox on a common grid,
+    MASK cloud/shadow/cirrus pixels using the SCL scene-classification band,
+    then compute field-level NDVI/EVI/NDWI from the mean of the CLEAR pixels
+    only. Returns None (scene skipped) if assets are missing or too few clear
+    pixels remain over the field -- so a cloudy scene no longer corrupts NDVI.
     """
     s2 = active_s2_config(cfg)
     assets = item.get("assets", {})
 
-    means = {}
+    hrefs = {}
     for band, asset_key in s2["assets"].items():
         asset = assets.get(asset_key)
         if not asset or "href" not in asset:
             logger.warning("Scene %s missing asset '%s' -- skipping scene", item.get("id"), asset_key)
             return None
-        try:
-            means[band] = read_band_mean_over_bbox(asset["href"], cfg.bbox)
-        except Exception as e:
-            logger.warning("Scene %s: failed reading band '%s' (%s): %s",
-                           item.get("id"), band, asset_key, e)
-            return None
+        hrefs[band] = asset["href"]
 
-    if any(np.isnan(v) for v in means.values()):
-        logger.info("Scene %s has no valid pixels over the field bbox -- skipping", item.get("id"))
+    # SCL (cloud mask) asset -- 'scl' on Earth Search, 'SCL' on Copernicus
+    scl_href = None
+    for k in ("scl", "SCL"):
+        a = assets.get(k)
+        if a and "href" in a:
+            scl_href = a["href"]
+            break
+
+    try:
+        red, shp = _read_band_array(hrefs["red"], cfg.bbox)      # red fixes the grid
+        nir, _ = _read_band_array(hrefs["nir"], cfg.bbox, out_shape=shp)
+        blue, _ = _read_band_array(hrefs["blue"], cfg.bbox, out_shape=shp)
+        swir, _ = _read_band_array(hrefs["swir"], cfg.bbox, out_shape=shp)
+        scl = None
+        if scl_href:
+            scl, _ = _read_band_array(scl_href, cfg.bbox, out_shape=shp)
+    except Exception as e:
+        logger.warning("Scene %s: band read failed (%s) -- skipping", item.get("id"), e)
         return None
 
-    # scale digital numbers -> reflectance, then indices from band means
-    red, nir = means["red"] / 10000.0, means["nir"] / 10000.0
-    blue, swir = means["blue"] / 10000.0, means["swir"] / 10000.0
+    valid = (np.isfinite(red) & np.isfinite(nir) & np.isfinite(blue) & np.isfinite(swir)
+             & (red > 0) & (nir > 0))
+    masked = False
+    if scl is not None:
+        valid &= np.isin(scl.astype(int), list(_SCL_KEEP))
+        masked = True
+
+    frac = float(valid.mean()) if valid.size else 0.0
+    if valid.sum() < 10 or frac < 0.05:
+        logger.info("Scene %s: only %.0f%% clear pixels over field -- skipping (too cloudy).",
+                    item.get("id"), 100 * frac)
+        return None
+
+    # mean of CLEAR pixels only -> reflectance -> indices
+    red_m, nir_m = red[valid].mean() / 10000.0, nir[valid].mean() / 10000.0
+    blue_m, swir_m = blue[valid].mean() / 10000.0, swir[valid].mean() / 10000.0
     eps = 1e-8
-    ndvi = (nir - red) / (nir + red + eps)
-    evi = float(np.clip(2.5 * (nir - red) / (nir + 6.0 * red - 7.5 * blue + 1.0 + eps), -1, 1))
-    ndwi = (nir - swir) / (nir + swir + eps)
+    ndvi = (nir_m - red_m) / (nir_m + red_m + eps)
+    evi = float(np.clip(2.5 * (nir_m - red_m) / (nir_m + 6.0 * red_m - 7.5 * blue_m + 1.0 + eps), -1, 1))
+    ndwi = (nir_m - swir_m) / (nir_m + swir_m + eps)
 
     props = item.get("properties", {})
     return {
         "date": (props.get("datetime") or "")[:10],
         "scene_id": item.get("id"),
         "cloud_cover_pct": props.get("eo:cloud_cover"),
+        "clear_pixel_pct": round(100 * frac, 1),
+        "cloud_masked": masked,
         "ndvi": ndvi,
         "evi": evi,
         "ndwi": ndwi,
     }
+
+
+def render_ndvi_map(item: dict, cfg: FieldConfig, out_path: str):
+    """Compute a PER-PIXEL NDVI image for one scene over the field bbox, mask
+    cloud/shadow pixels (transparent), colourise (red=low, green=vigorous) and
+    save a PNG. Returns out_path, or None if it can't be produced (missing
+    matplotlib, unreadable bands...). Used only for the dashboard map overlay."""
+    s2 = active_s2_config(cfg)
+    assets = item.get("assets", {})
+
+    def _href(band):
+        a = assets.get(s2["assets"][band])
+        return a["href"] if a and "href" in a else None
+
+    rh, nh = _href("red"), _href("nir")
+    if not rh or not nh:
+        return None
+    scl_href = None
+    for k in ("scl", "SCL"):
+        a = assets.get(k)
+        if a and "href" in a:
+            scl_href = a["href"]
+            break
+    try:
+        red, shp = _read_band_array(rh, cfg.bbox, cap=200)
+        nir, _ = _read_band_array(nh, cfg.bbox, out_shape=shp)
+        scl = None
+        if scl_href:
+            scl, _ = _read_band_array(scl_href, cfg.bbox, out_shape=shp)
+    except Exception as e:
+        logger.info("NDVI map: band read failed (%s).", e)
+        return None
+
+    eps = 1e-8
+    ndvi = (nir - red) / (nir + red + eps)
+    keep = (red > 0) & (nir > 0)
+    if scl is not None:
+        keep &= np.isin(scl.astype(int), list(_SCL_KEEP))
+    ndvi = np.where(keep, np.clip(ndvi, -0.1, 0.9), np.nan)
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.colors as mcolors
+        import matplotlib.pyplot as plt
+        try:
+            cmap = matplotlib.colormaps["RdYlGn"]           # matplotlib >= 3.7
+        except Exception:
+            import matplotlib.cm as cm
+            cmap = cm.get_cmap("RdYlGn")                     # older matplotlib
+        norm = mcolors.Normalize(vmin=0.0, vmax=0.8)
+        rgba = cmap(norm(np.nan_to_num(ndvi, nan=0.0)))
+        rgba[..., 3] = np.where(np.isfinite(ndvi), 0.88, 0.0)  # masked pixels transparent
+        plt.imsave(out_path, rgba)
+        logger.info("Wrote per-pixel NDVI map -> %s", out_path)
+        return out_path
+    except Exception as e:
+        logger.info("NDVI map: render failed (%s).", e)
+        return None
 
 
 def build_index_timeseries(items: list[dict], cfg: FieldConfig) -> pd.DataFrame:
@@ -261,10 +375,12 @@ def build_index_timeseries(items: list[dict], cfg: FieldConfig) -> pd.DataFrame:
         if rec is not None:
             rows.append(rec)
 
-    cols = ["date", "scene_id", "cloud_cover_pct", "ndvi", "evi", "ndwi"]
+    cols = ["date", "scene_id", "cloud_cover_pct", "clear_pixel_pct", "cloud_masked",
+            "ndvi", "evi", "ndwi"]
     if not rows:
         return pd.DataFrame(columns=cols)
-    df = pd.DataFrame(rows)[cols]
+    df = pd.DataFrame(rows)
+    df = df.reindex(columns=cols)
     df["date"] = pd.to_datetime(df["date"])
     return df.sort_values("date").reset_index(drop=True)
 
@@ -274,7 +390,7 @@ def fetch_indices_timeseries_openeo(cfg: FieldConfig) -> pd.DataFrame:
     MANDATED-STACK ALTERNATIVE (Copernicus): compute the field-mean NDVI/EVI/NDWI
     time series server-side via openEO on the Copernicus Data Space.
 
-    This is the clean way to satisfy the brief's "Copernicus STAC API" mandate
+    This is the clean way to use the Copernicus openEO service
     without wrestling with CDSE's S3 band access. It needs the free Copernicus
     account (interactive `authenticate_oidc()` device-code login the first time).
     Left importable-but-optional so the rest of the pipeline never requires the
@@ -305,10 +421,10 @@ def fetch_indices_timeseries_openeo(cfg: FieldConfig) -> pd.DataFrame:
 
 def run_sentinel2_ingestion(cfg: FieldConfig) -> Path:
     """
-    Week-1/2 entry point:
+    Entry point:
       1. search cloud-filtered scenes over the field bbox/date range
       2. read the four bands per scene, compute field-level NDVI/EVI/NDWI
-      3. write a tidy per-date index time series CSV (the input Week-2 aligns)
+      3. write a tidy per-date index time series CSV 
 
     Also writes a scene manifest CSV for provenance. Never hard-fails: if band
     reading isn't possible (missing rasterio, no egress, provider needs auth),
@@ -339,6 +455,14 @@ def run_sentinel2_ingestion(cfg: FieldConfig) -> Path:
     if not items:
         logger.warning("No scenes found -- widen the date range or cloud-cover threshold.")
 
+    # Only READ bands for a bounded number of scenes (each scene = 4 remote band
+    # reads). This is what keeps the run to a few minutes instead of ~an hour.
+    n_found = len(items)
+    items = subsample_scenes(items, s2["max_scenes"])
+    if len(items) < n_found:
+        logger.info("Reading bands for %d of %d scenes (evenly spread; max_scenes=%d).",
+                    len(items), n_found, s2["max_scenes"])
+
     # scene manifest (provenance)
     manifest_path = cfg.processed_dir / f"{cfg.name}_sentinel2_scenes.csv"
     pd.DataFrame([
@@ -351,7 +475,7 @@ def run_sentinel2_ingestion(cfg: FieldConfig) -> Path:
     ]).to_csv(manifest_path, index=False)
     logger.info("Wrote scene manifest (%d scenes) to %s", len(items), manifest_path)
 
-    # index time series (the real Week-2 input)
+    # index time series (the index series)
     with _rasterio_env(s2["provider"]):
         index_df = build_index_timeseries(items, cfg)
 
@@ -364,6 +488,17 @@ def run_sentinel2_ingestion(cfg: FieldConfig) -> Path:
         )
     else:
         logger.info("Wrote %d-date Sentinel-2 index series to %s", len(index_df), index_path)
+        # per-pixel NDVI map of the CLEAREST scene -> lets the dashboard show a
+        # true map of within-field vegetation (not just a mean).
+        try:
+            best = index_df.sort_values("clear_pixel_pct", ascending=False).iloc[0]
+            item = next((it for it in items if it.get("id") == best["scene_id"]), None)
+            if item is not None:
+                png = cfg.processed_dir / f"{cfg.name}_ndvi_map.png"
+                with _rasterio_env(s2["provider"]):
+                    render_ndvi_map(item, cfg, str(png))
+        except Exception as e:
+            logger.info("NDVI map generation skipped (%s).", e)
     return index_path
 
 

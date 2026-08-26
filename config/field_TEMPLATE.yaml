@@ -1,0 +1,98 @@
+# ============================================================================
+# FIELD CONFIG TEMPLATE — copy this to config/field_<name>.yaml for each new
+# field, then edit ONLY the marked <FILL ...> values below. Everything else is
+# identical to the main config and needs no change.
+#
+# To add a field for the multi-field validation:
+#   1. Pick an ISMN station in the target climate on https://ismn.earth/en/dataviewer/
+#   2. Download its data, extract/keep the zip in data/raw/<name>/
+#   3. Fill in: name, its coordinates (from the portal), and the DATE RANGE the
+#      station actually has data for (each field can use its own period).
+#   4. Point ismn.data_path at the downloaded archive/folder.
+# ============================================================================
+
+field:
+  name: "<FILL: short id, e.g. spain_remedhus>"     # names the output files
+  country: "<FILL: e.g. ES>"                        # informational only
+  crop: "<FILL: e.g. wheat>"                        # informational only
+
+  # Small box around the station (a ~0.02-0.03 deg box is fine). Get lon/lat
+  # from the ISMN Data Portal when you pick the station.
+  bbox:
+    min_lon: <FILL>
+    min_lat: <FILL>
+    max_lon: <FILL>
+    max_lat: <FILL>
+  centroid:
+    lon: <FILL: station longitude>
+    lat: <FILL: station latitude>
+
+# Use the period the DOWNLOADED station actually covers (check the portal).
+# Each field may use a different window — that's fine.
+time_range:
+  start_date: "<FILL: YYYY-MM-DD>"
+  end_date: "<FILL: YYYY-MM-DD>"
+
+# ---- everything below is identical to config/field_config.yaml ----
+sentinel2:
+  provider: "earth_search"
+  max_cloud_cover_pct: 20
+  earth_search:
+    stac_url: "https://earth-search.aws.element84.com/v1"
+    collection: "sentinel-2-l2a"
+    assets:
+      red: "red"
+      nir: "nir"
+      blue: "blue"
+      swir: "swir16"
+  copernicus:
+    stac_url: "https://catalogue.dataspace.copernicus.eu/stac"
+    collection: "SENTINEL-2"
+    product_type: "S2MSI2A"
+    assets:
+      red: "B04"
+      nir: "B08"
+      blue: "B02"
+      swir: "B11"
+
+open_meteo:
+  forecast_base_url: "https://api.open-meteo.com/v1/forecast"
+  archive_base_url: "https://archive-api.open-meteo.com/v1/archive"
+  hourly_vars:
+    - "temperature_2m"
+    - "precipitation"
+    - "et0_fao_evapotranspiration"
+  soil_vars_forecast:
+    - "soil_moisture_0_to_1cm"
+    - "soil_moisture_1_to_3cm"
+    - "soil_moisture_3_to_9cm"
+    - "soil_moisture_9_to_27cm"
+    - "soil_temperature_0cm"
+  soil_vars_archive:
+    - "soil_moisture_0_to_7cm"
+    - "soil_moisture_7_to_28cm"
+    - "soil_moisture_28_to_100cm"
+    - "soil_moisture_100_to_255cm"
+    - "soil_temperature_0_to_7cm"
+  timezone: "auto"
+
+ismn:
+  # Point at the archive/folder you downloaded for THIS field's station.
+  data_path: "<FILL: data/raw/<name>/...zip or folder>"
+  max_distance_km: 50
+
+iot_simulation:
+  n_virtual_sensors: 3
+  sensor_depth_cm: [10, 30, 60]
+  seed_from: "open_meteo"
+  noise_std_pct: 2.5
+  dropout_prob: 0.02
+  sampling_interval_minutes: 30
+
+alignment:
+  freq: "1D"
+  ffill_satellite_days: 10
+
+output:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"

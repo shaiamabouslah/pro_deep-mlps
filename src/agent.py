@@ -1,28 +1,9 @@
-"""
-Week-5 deliverable: the FUSION AGENT.
+"""Fusion agent: a LangGraph ReAct agent that fuses vegetation indices, weather and
+forecasted soil moisture into an irrigation and fertilization recommendation with a
+traceable explanation. Backends: a local model via Ollama, or a hosted model via Groq.
 
-A LangGraph ReAct agent (brief §6 mandates LangGraph) that fuses the three
-signals -- vegetation indices, weather outlook and forecasted soil moisture --
-into an irrigation / fertilization recommendation WITH an explicit, traceable
-explanation.
-
-The agent's "brain" is a local small language model served by Ollama
-(qwen2.5:7b by default -- free, offline, and good at tool-calling). It reasons
-by calling four tools, each backed by the real artefacts built in Weeks 1-4:
-
-    get_current_field_status   -> latest NDVI/EVI/NDWI + soil moisture + recent rain/ET0
-    get_weather_outlook        -> REAL Open-Meteo forecast for the next days (rain, ET0)
-    get_soil_moisture_forecast -> Chronos-2 forecast of soil moisture going forward
-    check_ndvi_anomaly         -> is current canopy vigour abnormally low?
-
-Prerequisites:
-    - Ollama running with the model pulled:  ollama pull qwen2.5:7b
-    - pip install -r requirements-agent.txt
-
-Usage:
     python -m src.agent --config config/field_config.yaml
-    python -m src.agent --model qwen2.5:3b --days 7 \
-        --query "Faut-il irriguer cette semaine ?"
+    python -m src.agent --backend groq --model openai/gpt-oss-120b
 """
 from __future__ import annotations
 
@@ -35,6 +16,15 @@ import requests
 
 from .config_loader import load_config
 from .indices import flag_ndvi_anomaly
+
+# Load GROQ_API_KEY (and other keys) from a project-root .env if present, so the
+# key can be set once in a file instead of exported in every shell session.
+try:
+    from dotenv import load_dotenv
+    from pathlib import Path as _Path
+    load_dotenv(_Path(__file__).resolve().parent.parent / ".env")
+except Exception:
+    pass
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -71,16 +61,34 @@ def _build_tools():
         df = _aligned()
         last = df.iloc[-1]
         last7 = df.tail(7)
-        obs = df[df.get("ndvi_observed", False) == True] if "ndvi_observed" in df else df
-        ndvi_line = (f"NDVI={obs['ndvi'].iloc[-1]:.2f} (last real image {obs['date'].iloc[-1].date()})"
-                     if len(obs) else "NDVI unavailable")
+        if "ndvi" in df and df["ndvi"].notna().any():
+            obs = df[df.get("ndvi_observed", False) == True] if "ndvi_observed" in df else df
+            obs = obs[obs["ndvi"].notna()]
+            ndvi_line = (f"NDVI={obs['ndvi'].iloc[-1]:.2f} (last real image {obs['date'].iloc[-1].date()})"
+                         if len(obs) else "NDVI unavailable")
+        else:
+            ndvi_line = "NDVI unavailable (no satellite data for this field)"
+        evi_txt = f"{last['evi']:.2f}" if "evi" in df and pd.notna(last.get("evi")) else "n/d"
+        ndwi_txt = f"{last['ndwi']:.2f}" if "ndwi" in df and pd.notna(last.get("ndwi")) else "n/d"
+
+        # Weather/soil columns are present only when the aligned table carries them
+        # (they can be absent for a fresh drawn parcel); degrade to "n/d" rather than crash.
+        def _sum(col):
+            return f"{last7[col].sum():.1f}" if col in df else "n/d"
+
+        def _mean(col):
+            return f"{last7[col].mean():.1f}" if col in df else "n/d"
+
+        soil_txt = (f"{last['soil_moisture_sensor_mean']:.3f} m3/m3"
+                    if "soil_moisture_sensor_mean" in df and pd.notna(last.get("soil_moisture_sensor_mean"))
+                    else "n/d")
         return (
             f"Date: {last['date'].date()}\n"
-            f"{ndvi_line}; EVI={last.get('evi', float('nan')):.2f}; NDWI={last.get('ndwi', float('nan')):.2f}\n"
-            f"Soil moisture (sensor): {last['soil_moisture_sensor_mean']:.3f} m3/m3\n"
-            f"Last 7 days: rain={last7['precip_sum_mm'].sum():.1f} mm, "
-            f"ET0={last7['et0_sum_mm'].sum():.1f} mm, "
-            f"mean temp={last7['temp_mean_c'].mean():.1f} C"
+            f"{ndvi_line}; EVI={evi_txt}; NDWI={ndwi_txt}\n"
+            f"Soil moisture (sensor): {soil_txt}\n"
+            f"Last 7 days: rain={_sum('precip_sum_mm')} mm, "
+            f"ET0={_sum('et0_sum_mm')} mm, "
+            f"mean temp={_mean('temp_mean_c')} C"
         )
 
     @tool
@@ -145,36 +153,77 @@ def _build_tools():
             get_soil_moisture_forecast, check_ndvi_anomaly]
 
 
-SYSTEM_PROMPT = """You are an agronomy decision assistant for precision irrigation.
-You advise on IRRIGATION and FERTILIZATION for a single field, using ONLY the tools provided.
+SYSTEM_PROMPT = """You are an agronomy decision assistant for precision irrigation of a single corn field.
+Use ONLY the four tools, and ALWAYS call all four before deciding:
+1. get_current_field_status  2. get_weather_outlook  3. get_soil_moisture_forecast  4. check_ndvi_anomaly
 
-Always follow this process:
-1. Call get_current_field_status to see the current soil moisture and canopy state.
-2. Call get_weather_outlook to see upcoming rain and evaporative demand (ET0).
-3. Call get_soil_moisture_forecast to see where soil moisture is heading.
-4. Call check_ndvi_anomaly to check for crop stress.
+Then decide by applying the rules IN ORDER. Base the decision on the FORECAST soil moisture and the
+weather to come, NOT only on today's value -- act BEFORE stress, not after.
 
-Then decide, using this agronomic logic (corn):
-- Soil moisture is comfortable above ~0.30 m3/m3, marginal 0.20-0.30, stressed below ~0.20.
-- Recommend IRRIGATION if soil moisture is forecast to fall toward/below the stress
-  zone AND little rain is expected AND ET0 (demand) is high. Otherwise advise to wait,
-  especially if meaningful rain is coming.
-- Flag FERTILIZATION concerns only if there is a clear NDVI anomaly (possible stress).
+Soil-moisture zones (m3/m3): comfortable > 0.30, marginal 0.20-0.30, stressed < 0.20.
+
+Choose EXACTLY ONE action:
+
+- SURVEILLER (monitor / investigate -- do NOT irrigate) when the situation is ambiguous or NOT water-driven:
+    * the soil-moisture sensor reading is missing/unreliable (you cannot decide safely), OR
+    * NDVI is VERY LOW (< ~0.20) -- the field is likely BARE SOIL or a harvested/absent crop. You
+      irrigate a CROP, not bare ground, so do NOT recommend irrigation on soil moisture alone even if
+      the soil is dry; recommend verifying a crop is actually present first, OR
+    * NDVI is anomalously low BUT soil moisture is adequate (> ~0.25) -- the stress is not water
+      (likely pest/disease/nutrient), OR
+    * the signals conflict (e.g. low NDVI but wet soil).
+
+- IRRIGUER when water is genuinely the limiting factor -- ALL of:
+    * a crop is actually present (NDVI >= ~0.20; if NDVI < ~0.20 choose SURVEILLER instead), AND
+    * forecast soil moisture falls to/below ~0.22 (toward/into the stress zone), AND
+    * little rain is expected (< ~10 mm), AND
+    * evaporative demand ET0 is high.
+  This holds EVEN IF today's soil is still comfortable: a forecast drop with no rain means irrigate NOW.
+
+- ATTENDRE only when neither of the above applies: soil stays comfortable, OR meaningful rain
+  (>= ~10 mm) will recharge it.
+
+Do NOT default to ATTENDRE. If the IRRIGUER rule is met, say irriguer. If it is a SURVEILLER case, say surveiller.
+
+FERTILIZATION (a SEPARATE decision from irrigation — decide it too):
+- FERTILISER (envisager un apport d'azote) when the canopy under-performs but water is NOT the problem:
+  NDVI is low (< ~0.45) AND soil moisture is adequate (>= ~0.22). A weak canopy with enough water points
+  to a nutrient (nitrogen) limitation, not thirst. Suggest confirming with a soil test.
+- DIFFÉRER (corriger l'eau d'abord) when NDVI is low BUT soil is dry (< ~0.22): the problem is water, not
+  nutrients — fertilizing a water-stressed crop wastes input. Fix water first, reassess.
+- AUCUN apport when NDVI is healthy (>= ~0.45), or when NDVI < ~0.20 (bare/harvested — no crop to feed).
 
 Answer in FRENCH, concisely, in this structure:
-- Recommandation: (irriguer / attendre / surveiller) + quand et combien si applicable.
-- Justification: cite the ACTUAL NUMBERS you obtained from the tools (soil moisture now
-  and forecast, expected rain and ET0, NDVI). Every claim must trace to a tool result.
+- Recommandation irrigation: (irriguer / attendre / surveiller) + quand et combien si applicable.
+- Recommandation fertilisation: (fertiliser / différer / aucun) + azote si applicable.
+- Justification: cite the ACTUAL NUMBERS you obtained from the tools (soil moisture now and
+  forecast, expected rain and ET0, NDVI). Every claim must trace to a tool result.
 - Confiance et limites: one line on uncertainty.
 Never invent numbers you did not get from a tool."""
 
 
-def run_agent(query: str, model_name: str, days: int):
-    from langchain_ollama import ChatOllama
+def get_llm(backend: str = "ollama", model: str | None = None, temperature: float = 0.0):
+    """Chat model for the chosen backend.
+
+    backend='ollama' -> LOCAL model via Ollama (free, offline, no key; e.g. qwen2.5:7b).
+    backend='groq'   -> Groq API (needs GROQ_API_KEY + internet, but much stronger models,
+                        e.g. llama-3.3-70b-versatile, and very fast).
+    """
+    backend = (backend or "ollama").lower()
+    if backend == "ollama":
+        from langchain_ollama import ChatOllama
+        return ChatOllama(model=model or "qwen2.5:7b", temperature=temperature)
+    if backend == "groq":
+        from langchain_groq import ChatGroq  # pip install langchain-groq ; set GROQ_API_KEY
+        return ChatGroq(model=model or "openai/gpt-oss-120b", temperature=temperature)
+    raise ValueError(f"Unknown backend '{backend}' -- use 'ollama' or 'groq'")
+
+
+def run_agent(query: str, model_name: str, days: int, backend: str = "ollama"):
     from langgraph.prebuilt import create_react_agent
 
     tools = _build_tools()
-    llm = ChatOllama(model=model_name, temperature=0)
+    llm = get_llm(backend, model_name)
     agent = create_react_agent(llm, tools, prompt=SYSTEM_PROMPT)
 
     user_msg = f"{query} (horizon: {days} jours)"
@@ -200,20 +249,24 @@ def run_agent(query: str, model_name: str, days: int):
 
 def main():
     global _CFG, _CSV
-    p = argparse.ArgumentParser(description="Week-5 LangGraph fusion agent (Ollama)")
+    p = argparse.ArgumentParser(description="Fusion agent (Ollama or Groq)")
     p.add_argument("--config", default="config/field_config.yaml")
-    p.add_argument("--model", default="qwen2.5:7b", help="Ollama model (e.g. qwen2.5:3b)")
+    p.add_argument("--backend", default="groq", choices=["ollama", "groq"],
+                   help="groq=API (needs GROQ_API_KEY, stronger — DEFAULT) | ollama=local (free/offline)")
+    p.add_argument("--model", default=None,
+                   help="model id; default openai/gpt-oss-120b (groq) or qwen2.5:7b (ollama)")
     p.add_argument("--days", type=int, default=7)
     p.add_argument("--query", default="Faut-il irriguer cette parcelle dans les prochains jours ? "
                                       "Donne une recommandation d'irrigation et de fertilisation.")
     args = p.parse_args()
+    model = args.model or ("openai/gpt-oss-120b" if args.backend == "groq" else "qwen2.5:7b")
 
     _CFG = load_config(args.config)
     _CSV = _CFG.processed_dir / f"{_CFG.name}_aligned_daily.csv"
     if not _CSV.exists():
         raise FileNotFoundError(f"{_CSV} not found. Run `python -m src.pipeline` first.")
 
-    run_agent(args.query, args.model, args.days)
+    run_agent(args.query, model, args.days, backend=args.backend)
 
 
 if __name__ == "__main__":

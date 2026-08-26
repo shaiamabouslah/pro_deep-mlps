@@ -1,13 +1,40 @@
+# Precision-Agriculture Decision System — dependencies
+#   pip install -r requirements.txt
+
+# --- core ---
 numpy>=1.26
 pandas>=2.0
 requests>=2.31
 pyyaml>=6.0
+python-dotenv>=1.0
+
+# --- earth observation / geospatial ---
 pystac-client>=0.8
 rasterio>=1.3
 shapely>=2.0
 geopandas>=0.14
 xarray>=2024.1
-python-dotenv>=1.0
 ismn>=1.3
-# openeo>=0.30      # optional: only for the Copernicus openEO Sentinel-2 path
-#                     (see src/sentinel2_ingest.fetch_indices_timeseries_openeo)
+
+# --- forecasting ---
+torch>=2.2
+neuralforecast>=1.7
+chronos-forecasting>=2.0
+matplotlib>=3.7
+
+# --- agent ---
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-ollama>=0.2.0
+langchain-groq>=0.2.0
+
+# --- dashboard ---
+streamlit>=1.36
+folium>=0.16
+streamlit-folium>=0.20
+altair>=5.0
+
+# --- optional (each is skipped gracefully if not installed) ---
+#   timesfm[torch]            additional forecasting foundation model
+#   autogluon.timeseries>=1.2 alternative Chronos-2 runner
+#   openeo>=0.30              Copernicus openEO Sentinel-2 access path

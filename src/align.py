@@ -1,32 +1,6 @@
-"""
-Week-2 deliverable: a CLEAN, ALIGNED multi-source time series for the field.
-
-This is the step the brief calls "Data pipeline -> Clean, aligned multi-source
-time series for the field." It takes the three Week-1 streams, which live on
-totally different time grids...
-
-    * Sentinel-2 indices : sparse & irregular (one row per cloud-free scene,
-                            roughly every ~5 days)
-    * Open-Meteo weather : dense & hourly
-    * IoT / ISMN soil     : dense & sub-daily, one row per sensor per timestamp
-
-...and fuses them onto a single common DAILY grid, one row per day, so the
-Week-3 forecaster and the Week-5 fusion agent get one tidy table to reason over.
-
-Design choices (documented on purpose -- reference them in your SOTA note):
-  * Daily grid. Irrigation/fertilization decisions are daily, satellite revisit
-    is multi-day, so a daily resolution is the natural common denominator.
-  * Weather is aggregated per day (mean temp + min/max, summed precipitation &
-    ET0, mean soil moisture/temperature).
-  * Sensor soil moisture is averaged across all sensors per day, and also kept
-    per depth.
-  * Satellite indices are sparse: we forward-fill them up to `ffill_satellite_days`
-    days and keep an explicit `ndvi_observed` flag so downstream code knows which
-    days carry a real observation vs a carried-forward value. We never silently
-    invent an index for a day with no nearby scene.
-
-Everything here is pure pandas -- no network, fully unit-testable offline
-(see tests/test_align.py).
+"""Align the multi-source streams (satellite indices, weather, soil moisture) onto one
+clean daily table per field, carrying satellite indices forward between revisits with
+an observed flag.
 """
 from __future__ import annotations
 
@@ -190,7 +164,7 @@ def run_alignment(
     satellite_path: str | Path | None = None,
 ) -> Path:
     """
-    Week-2 entry point used by pipeline.py: read whichever Week-1 CSVs exist,
+    read whichever source CSVs exist,
     build the aligned daily table, and persist it to
     data/processed/<field>_aligned_daily.csv. Returns that path.
     """

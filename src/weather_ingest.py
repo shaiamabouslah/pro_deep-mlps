@@ -62,7 +62,7 @@ def fetch_weather_and_soil(cfg: FieldConfig, use_archive: bool = False) -> pd.Da
 
 
 def run_weather_ingestion(cfg: FieldConfig) -> Path:
-    """Week-1 entry point: fetch + persist weather/soil series for the field."""
+    """fetch + persist weather/soil series for the field."""
     df = fetch_weather_and_soil(cfg, use_archive=True)
     out_path = cfg.processed_dir / f"{cfg.name}_weather_soil.csv"
     df.to_csv(out_path, index=False)

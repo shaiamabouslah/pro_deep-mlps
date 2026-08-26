@@ -1,16 +1,6 @@
-"""
-Simulated in-field IoT soil-moisture sensor network.
-
-The project brief explicitly accepts simulating IoT streams (seeded from
-Open-Meteo soil variables) when physical sensors aren't available. This
-module does that: it takes a soil-moisture time series (real, from
-Open-Meteo) and generates N virtual sensors at different depths with
-realistic per-sensor noise and occasional dropouts, so the fusion agent
-(Week 5) has a multi-sensor stream to reason over even for a field where
-the intern has no hardware.
-
-A `synthetic_baseline_soil_series` fallback is also provided so this module
-can be unit-tested with zero network access.
+"""Soil-moisture sources for a field without a physical sensor: a modelled source built
+directly from Open-Meteo, and a simulated multi-depth sensor network (seeded from
+Open-Meteo) used for stress-tests and offline runs.
 """
 from __future__ import annotations
 
@@ -88,9 +78,50 @@ def simulate_sensor_network(baseline: pd.Series, cfg: FieldConfig) -> pd.DataFra
     return out
 
 
+def run_modeled_soil_source(cfg: FieldConfig, weather_df: pd.DataFrame) -> Path | None:
+    """
+    TIER-2 soil source (global coverage, no station required).
+
+    When no real ISMN station is near the field, use Open-Meteo's PHYSICALLY
+    MODELLED multi-depth soil moisture directly as the soil series -- a real
+    reanalysis value (ERA5-Land / model), not a synthetic simulation. This is
+    the Open-Meteo soil source and, unlike ISMN, it has
+    data for EVERY field on Earth, so the pipeline never gets stuck without soil
+    data again.
+
+    Writes a CSV in the same schema the alignment step expects for a sensor
+    stream (timestamp, soil_moisture_vwc, depth_cm), so it drops straight into
+    `run_alignment(soil_path=...)` with no other change.
+    """
+    soil_cols = [c for c in weather_df.columns if c.startswith("soil_moisture_")]
+    if not soil_cols:
+        logger.warning("No Open-Meteo soil-moisture column found -- cannot build modelled soil source.")
+        return None
+    # prefer a root-zone depth (what irrigation decisions care about)
+    preferred = ["soil_moisture_7_to_28cm", "soil_moisture_28_to_100cm",
+                 "soil_moisture_9_to_27cm", "soil_moisture_0_to_7cm",
+                 "soil_moisture_3_to_9cm", "soil_moisture_1_to_3cm", "soil_moisture_0_to_1cm"]
+    col = next((c for c in preferred if c in soil_cols), soil_cols[0])
+
+    tcol = "time" if "time" in weather_df.columns else weather_df.columns[0]
+    out_df = pd.DataFrame({
+        "timestamp": pd.to_datetime(weather_df[tcol]),
+        "sensor_id": f"{cfg.name}_open_meteo_modeled",
+        "depth_cm": 20,  # nominal root-zone depth label
+        "soil_moisture_vwc": pd.to_numeric(weather_df[col], errors="coerce"),
+        "field_name": cfg.name,
+        "source": "open_meteo_modeled",
+    }).dropna(subset=["soil_moisture_vwc"])
+
+    out_path = cfg.processed_dir / f"{cfg.name}_soil_modeled.csv"
+    out_df.to_csv(out_path, index=False)
+    logger.info("Modelled soil source (Open-Meteo %s, %d rows) -> %s", col, len(out_df), out_path)
+    return out_path
+
+
 def run_iot_simulation(cfg: FieldConfig, real_soil_series: pd.Series | None = None) -> Path:
     """
-    Week-1 entry point. Pass in the real Open-Meteo soil-moisture series
+    Pass in the real Open-Meteo soil-moisture series
     (preferred -- keeps the simulation grounded in the field's actual
     climate) or omit it to fall back to the synthetic baseline for a dry run.
     """

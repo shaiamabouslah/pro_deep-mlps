@@ -1,24 +1,7 @@
-"""
-Week-4 deliverable (part 3): synthetic gap-filling of the soil-moisture series.
+"""Gap-filling of the soil-moisture series: fills short sensor dropouts by interpolation,
+with an optional foundation-model imputer for comparison.
 
-The brief (§5.2) asks to "use time-series foundation models in zero-shot mode to
-impute sparse/missing IoT sensor gaps". The ISMN quality filter left real holes
-in the sensor series; so far we filled them with plain linear interpolation. Here
-we test whether **Chronos-2 zero-shot** imputes them better, and we produce a
-properly gap-filled series.
-
-Method:
-  1. Take the sensor series and its currently-known days.
-  2. Punch several SYNTHETIC gaps into known stretches (we know the truth there).
-  3. Fill each gap two ways:
-        - linear interpolation (the baseline)
-        - Chronos-2 forecasting forward from the values before the gap
-  4. Compare the imputation error (MAE / RMSE) on the masked points.
-  5. Fill the REAL missing days with the better method and save the result.
-
-Usage:
-    python -m src.gapfill --config config/field_config.yaml \
-        --n-gaps 8 --gap-len 5
+    python -m src.gapfill --config config/field_config.yaml --gap-len 5
 """
 from __future__ import annotations
 
@@ -99,14 +82,19 @@ def evaluate(csv_path, n_gaps: int, gap_len: int, out_dir) -> pd.DataFrame:
                            "(try a smaller --gap-len).")
     logger.info("Evaluating on %d synthetic gaps of %d days", len(gaps), gap_len)
 
-    logger.info(">>> Loading Chronos-2 into memory. The FIRST call can take "
-                "30-90s with NO output -- this is normal, do NOT press any key. <<<")
+    # Chronos is optional -- try to load it, but never abort the run if it
+    # isn't available (offline / weights can't download / package missing).
+    logger.info(">>> Trying to load Chronos-2. The FIRST call can take 30-90s with "
+                "NO output -- this is normal. <<<")
+    pipe, chronos_ok = None, False
     try:
         pipe = _make_pipe()
+        chronos_ok = True
+        logger.info(">>> Chronos-2 loaded. Filling gaps with interpolation AND Chronos. <<<")
     except Exception as e:
-        logger.error("Could not load Chronos-2 (%s). Aborting gap-fill.", e)
-        raise
-    logger.info(">>> Chronos-2 loaded. Filling gaps... <<<")
+        logger.warning("Chronos-2 unavailable (%s: %s). Falling back to linear "
+                       "interpolation only -- re-run where Chronos is installed to add "
+                       "the foundation-model comparison.", type(e).__name__, e)
 
     rows, all_interp_err, all_chronos_err = [], [], []
     for gi, start in enumerate(gaps, 1):
@@ -114,42 +102,54 @@ def evaluate(csv_path, n_gaps: int, gap_len: int, out_dir) -> pd.DataFrame:
         sl = slice(start, start + gap_len)
         truth = values[sl].copy()
 
-        # linear interpolation over the punched gap
+        # linear interpolation over the punched gap (always available)
         masked = clean.copy()
         masked[sl] = np.nan
         interp = pd.Series(masked).interpolate(method="linear").ffill().bfill().values[sl]
+        ie = np.abs(interp - truth)
+        all_interp_err += list(ie)
+        row = {"gap_start": str(raw.index[start].date()), "gap_len": gap_len,
+               "mae_interp": round(float(ie.mean()), 5)}
 
         # Chronos-2: forecast forward from the (clean) history before the gap
-        chronos = _chronos_forecast(pipe, clean[:start], gap_len)
-
-        ie = np.abs(interp - truth)
-        ce = np.abs(chronos - truth)
-        all_interp_err += list(ie)
-        all_chronos_err += list(ce)
-        rows.append({"gap_start": str(raw.index[start].date()), "gap_len": gap_len,
-                     "mae_interp": round(float(ie.mean()), 5),
-                     "mae_chronos": round(float(ce.mean()), 5)})
+        if chronos_ok:
+            try:
+                chronos = _chronos_forecast(pipe, clean[:start], gap_len)
+                ce = np.abs(chronos - truth)
+                all_chronos_err += list(ce)
+                row["mae_chronos"] = round(float(ce.mean()), 5)
+            except Exception as e:
+                logger.warning("   Chronos failed on gap %d (%s) -- interpolation only here.", gi, e)
+        rows.append(row)
 
     per_gap = pd.DataFrame(rows)
-    mae_i, mae_c = np.mean(all_interp_err), np.mean(all_chronos_err)
-    rmse_i = np.sqrt(np.mean(np.square(all_interp_err)))
-    rmse_c = np.sqrt(np.mean(np.square(all_chronos_err)))
+    mae_i = float(np.mean(all_interp_err))
+    rmse_i = float(np.sqrt(np.mean(np.square(all_interp_err))))
+    chronos_better = False
+    mae_c = rmse_c = None
+    if all_chronos_err:
+        mae_c = float(np.mean(all_chronos_err))
+        rmse_c = float(np.sqrt(np.mean(np.square(all_chronos_err))))
+        chronos_better = mae_c < mae_i
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     per_gap.to_csv(out_dir / "gapfill_eval.csv", index=False)
 
-    print("\n=== Synthetic gap-filling: Chronos-2 vs linear interpolation ===")
+    print("\n=== Synthetic gap-filling ===")
     print(per_gap.to_string(index=False))
-    print(f"\nOverall MAE   -> interpolation {mae_i:.4f} | chronos {mae_c:.4f}")
-    print(f"Overall RMSE  -> interpolation {rmse_i:.4f} | chronos {rmse_c:.4f}")
-    better = "Chronos-2" if mae_c < mae_i else "linear interpolation"
-    print(f"Better imputer on these gaps: {better}")
+    if all_chronos_err:
+        print(f"\nOverall MAE   -> interpolation {mae_i:.4f} | chronos {mae_c:.4f}")
+        print(f"Overall RMSE  -> interpolation {rmse_i:.4f} | chronos {rmse_c:.4f}")
+        print(f"Better imputer on these gaps: {'Chronos-2' if chronos_better else 'linear interpolation'}")
+    else:
+        print(f"\nOverall MAE (linear interpolation): {mae_i:.4f} | RMSE: {rmse_i:.4f}")
+        print("Chronos-2 not run in this environment -- interpolation is the imputer used.")
 
     # produce a real gap-filled series with the winning method
     filled = clean.copy()
     method = np.where(known, "observed", "interpolation")
-    if mae_c < mae_i:
+    if chronos_better:
         for start in np.where(~known)[0]:
             if known[:start].sum() >= MIN_CONTEXT:
                 try:
@@ -158,14 +158,18 @@ def evaluate(csv_path, n_gaps: int, gap_len: int, out_dir) -> pd.DataFrame:
                 except Exception:
                     pass
     out = pd.DataFrame({"date": raw.index, "raw": raw.values, "filled": filled, "method": method})
-    out.to_csv(out_dir / f"{Path(csv_path).stem.replace('_aligned_daily','')}_soil_gapfilled.csv", index=False)
-    print(f"\nWrote: {out_dir / 'gapfill_eval.csv'}")
-    print(f"Wrote gap-filled series (method column flags observed/interp/chronos).")
+    stem = Path(csv_path).stem.replace("_aligned_daily", "")
+    out.to_csv(out_dir / f"{stem}_soil_gapfilled.csv", index=False)
+    n_filled = int((~known).sum())
+    print(f"\nGap-filled series: {n_filled} missing day(s) imputed "
+          f"({'Chronos where it helped, ' if chronos_better else ''}interpolation otherwise).")
+    print(f"Wrote: {out_dir / 'gapfill_eval.csv'}")
+    print(f"Wrote: {out_dir / (stem + '_soil_gapfilled.csv')} (method column flags observed/interp/chronos).")
     return per_gap
 
 
 def main():
-    p = argparse.ArgumentParser(description="Week-4 synthetic gap-filling")
+    p = argparse.ArgumentParser(description="Gap-filling")
     p.add_argument("--config", default="config/field_config.yaml")
     p.add_argument("--n-gaps", type=int, default=8)
     p.add_argument("--gap-len", type=int, default=5)

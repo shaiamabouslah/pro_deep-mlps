@@ -1,10 +1,15 @@
 # Week-5 fusion-agent dependencies -- install on top of the others.
 #   pip install -r requirements-agent.txt
 #
-# The agent's brain is a LOCAL model served by Ollama (no API key, offline).
+# Default backend is a LOCAL model served by Ollama (no API key, offline).
 # Make sure Ollama is installed and the model is pulled:
 #   ollama pull qwen2.5:7b        (or qwen2.5:3b for a lighter/faster run)
 
 langgraph>=0.2.0
 langchain-core>=0.3.0
 langchain-ollama>=0.2.0
+
+# Optional: Groq API backend (much stronger models, e.g. llama-3.3-70b-versatile).
+# Needs a free key from https://console.groq.com  ->  set GROQ_API_KEY.
+# Then:  python agent_eval.py --backend groq
+langchain-groq>=0.2.0

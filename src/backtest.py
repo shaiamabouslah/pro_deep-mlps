@@ -1,21 +1,7 @@
-"""
-Week-4 deliverable (part 1): sliding-origin backtest -> a defensible ranking.
+"""Sliding-origin backtest: evaluates each forecasting model over several successive
+windows to produce a robust ranking rather than a single-window one.
 
-The Week-3 comparison used ONE held-out window, so its ranking could be luck.
-This module replays the same four models over several successive windows and
-aggregates the metrics (mean AND standard deviation). A model that wins on
-average *and* is stable (low std) is a defensible "best model" -- which is what
-the brief asks for in §9 ("judged on rigour of evaluation, not a demo").
-
-How the windows are built (rolling origin, no leakage):
-    window 0 : test = last `horizon` days,            train = everything before
-    window 1 : test = `horizon` days ending `step` earlier, train = before that
-    ...
-Each window only ever trains on data strictly before its test period.
-
-Usage:
-    python -m src.backtest --config config/field_config.yaml \
-        --horizon 14 --windows 6 --step 7
+    python -m src.backtest --config config/field_config.yaml --windows 6 --step 7
 """
 from __future__ import annotations
 
@@ -105,7 +91,7 @@ def sliding_backtest(csv_path, horizon: int, n_windows: int, step: int, out_dir)
 
 
 def main():
-    p = argparse.ArgumentParser(description="Week-4 sliding-origin backtest")
+    p = argparse.ArgumentParser(description="Sliding-origin backtest")
     p.add_argument("--config", default="config/field_config.yaml")
     p.add_argument("--horizon", type=int, default=14)
     p.add_argument("--windows", type=int, default=6)

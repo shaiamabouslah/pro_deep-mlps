@@ -1,25 +1,6 @@
-"""
-Week-4 deliverable (part 2): does adding COVARIATES help?
+"""Covariate study: measures whether adding weather and NDVI covariates improves the
+soil-moisture forecast versus the univariate models.
 
-Week-3 showed that in univariate mode no model really beats the naive baseline
-at 14 days, because soil-moisture drying is driven by *future weather* the model
-never sees. Here we feed that weather in and measure the gain.
-
-Covariates used (all already in <field>_aligned_daily.csv):
-  * KNOWN-FUTURE : precip_sum_mm, et0_sum_mm, temp_mean_c
-        These are things we would know from a weather FORECAST. In this backtest
-        we use the actual recorded weather over the test window as a stand-in for
-        a perfect forecast -- so treat the covariate numbers as an OPTIMISTIC
-        upper bound on the achievable gain (a real weather forecast has error).
-  * PAST-ONLY    : ndvi
-        The vegetation index is only known up to "today", so it goes in as a
-        past covariate.
-
-For each model we report the univariate score AND the +covariate score, so the
-improvement is explicit. Chronos-2 and N-HiTS both accept covariates natively;
-TimesFM is attempted and skipped if its covariate API differs.
-
-Usage:
     python -m src.forecast_cov --config config/field_config.yaml --horizon 14
 """
 from __future__ import annotations
@@ -179,7 +160,7 @@ def run_comparison(csv_path, horizon, out_dir) -> pd.DataFrame:
 
 
 def main():
-    p = argparse.ArgumentParser(description="Week-4 covariate study")
+    p = argparse.ArgumentParser(description="Covariate study")
     p.add_argument("--config", default="config/field_config.yaml")
     p.add_argument("--horizon", type=int, default=14)
     args = p.parse_args()

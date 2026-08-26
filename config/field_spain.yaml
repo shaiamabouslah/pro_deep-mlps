@@ -1,0 +1,90 @@
+# ============================================================================
+# FIELD 2 — Spain (Catalonia / Lleida plain). Mediterranean, semi-arid cereal
+# country — a real climate contrast to humid Iowa. Coordinates are pre-filled;
+# the pipeline auto-snaps to the nearest ISMN station within max_distance_km.
+# You only need to DOWNLOAD one Catalonia soil-moisture station into
+# data/raw/spain/ for the window below.
+# ============================================================================
+
+field:
+  name: "spain_catalonia"
+  country: "ES"
+  crop: "vineyard"            # Les Garrigues dryland farming (informational)
+  # Centred on the XMS-CAT "Vilosell" station (Lleida, Catalonia).
+  bbox:
+    min_lon: 0.950
+    min_lat: 41.360
+    max_lon: 0.980
+    max_lat: 41.390
+  centroid:
+    lon: 0.96528
+    lat: 41.37437
+
+# Matches the soil-moisture coverage of the downloaded XMS-CAT data.
+time_range:
+  start_date: "2025-12-01"
+  end_date: "2026-08-01"
+
+sentinel2:
+  provider: "earth_search"
+  max_cloud_cover_pct: 8      # tighter -> fewer, clearer scenes -> much faster read
+  earth_search:
+    stac_url: "https://earth-search.aws.element84.com/v1"
+    collection: "sentinel-2-l2a"
+    assets:
+      red: "red"
+      nir: "nir"
+      blue: "blue"
+      swir: "swir16"
+  copernicus:
+    stac_url: "https://catalogue.dataspace.copernicus.eu/stac"
+    collection: "SENTINEL-2"
+    product_type: "S2MSI2A"
+    assets:
+      red: "B04"
+      nir: "B08"
+      blue: "B02"
+      swir: "B11"
+
+open_meteo:
+  forecast_base_url: "https://api.open-meteo.com/v1/forecast"
+  archive_base_url: "https://archive-api.open-meteo.com/v1/archive"
+  hourly_vars:
+    - "temperature_2m"
+    - "precipitation"
+    - "et0_fao_evapotranspiration"
+  soil_vars_forecast:
+    - "soil_moisture_0_to_1cm"
+    - "soil_moisture_1_to_3cm"
+    - "soil_moisture_3_to_9cm"
+    - "soil_moisture_9_to_27cm"
+    - "soil_temperature_0cm"
+  soil_vars_archive:
+    - "soil_moisture_0_to_7cm"
+    - "soil_moisture_7_to_28cm"
+    - "soil_moisture_28_to_100cm"
+    - "soil_moisture_100_to_255cm"
+    - "soil_temperature_0_to_7cm"
+  timezone: "auto"
+
+ismn:
+  # Save the ISMN download (Header+values zip) as exactly data/raw/spain.zip.
+  # A generous radius so it snaps to whatever station you downloaded.
+  data_path: "data/raw/spain.zip"
+  max_distance_km: 60
+
+iot_simulation:
+  n_virtual_sensors: 3
+  sensor_depth_cm: [10, 30, 60]
+  seed_from: "open_meteo"
+  noise_std_pct: 2.5
+  dropout_prob: 0.02
+  sampling_interval_minutes: 30
+
+alignment:
+  freq: "1D"
+  ffill_satellite_days: 10
+
+output:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
