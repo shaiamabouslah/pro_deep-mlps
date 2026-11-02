@@ -25,7 +25,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from .config_loader import FieldConfig
@@ -96,8 +95,7 @@ def read_station_soil_moisture(interface, station, start_date: str, end_date: st
             continue
 
         meta = sensor.metadata.to_pd()
-        depth_from_m = float(meta.loc["depth_from", "val"]) if "depth_from" in meta.index else np.nan
-        depth_cm = depth_from_m * 100 if pd.notna(depth_from_m) else np.nan
+        depth_cm = round(float(sensor.depth.start) * 100, 1)
         instrument = meta.loc["instrument", "val"] if "instrument" in meta.index else "unknown"
 
         series = df["soil_moisture"].copy()

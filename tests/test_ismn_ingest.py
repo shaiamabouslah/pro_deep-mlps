@@ -7,6 +7,7 @@ a real ISMN account + download, which needs manual registration.
 """
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -29,9 +30,10 @@ class MockMetadata:
 
 
 class MockSensor:
-    """Mimics ismn.components.Sensor: .read_data() -> DataFrame, .metadata.to_pd()."""
+    """Mimics ismn.components.Sensor: .read_data() -> DataFrame, .metadata.to_pd(), .depth (meters)."""
     def __init__(self, depth_from_m, instrument, data_df):
         self.metadata = MockMetadata(depth_from_m, instrument)
+        self.depth = SimpleNamespace(start=depth_from_m, end=depth_from_m + 0.1)
         self._data = data_df
 
     def read_data(self):
