@@ -24,7 +24,6 @@ FUTURE_COVS = ["precip_sum_mm", "et0_sum_mm", "temp_mean_c"]   # known from a we
 PAST_COVS = ["ndvi"]                                           # only known up to "today"
 
 
-# ---------------------------------------------------------------------------
 def load_frame(csv_path) -> pd.DataFrame:
     """Aligned table -> clean daily frame with target + available covariates."""
     df = pd.read_csv(csv_path, parse_dates=["date"]).sort_values("date").set_index("date")
@@ -38,9 +37,6 @@ def _present(df, names):
     return [c for c in names if c in df.columns]
 
 
-# ---------------------------------------------------------------------------
-# covariate-aware runners
-# ---------------------------------------------------------------------------
 def run_chronos_cov(train_df, test_df, horizon):
     """Chronos-2 with covariates via predict_df(future_df=...)."""
     from chronos import Chronos2Pipeline
@@ -101,7 +97,6 @@ def run_nhits_cov(train_df, test_df, horizon):
     return nf.predict(futr_df=futr)["NHITS"].to_numpy(float)[:horizon], None
 
 
-# ---------------------------------------------------------------------------
 def run_comparison(csv_path, horizon, out_dir) -> pd.DataFrame:
     df = load_frame(csv_path)
     train_df, test_df = df.iloc[:-horizon], df.iloc[-horizon:]
@@ -148,7 +143,6 @@ def run_comparison(csv_path, horizon, out_dir) -> pd.DataFrame:
     print("\n=== Univariate vs +covariate (lower is better) ===")
     print(results.to_string(index=False))
 
-    # explicit improvement lines
     print("\n--- covariate effect (RMSE) ---")
     m = results.set_index("model")["RMSE"]
     for base in ("chronos", "nhits"):

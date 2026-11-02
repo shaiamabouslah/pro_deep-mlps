@@ -34,9 +34,6 @@ _CFG = None
 _CSV = None
 
 
-# ---------------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------------
 def _aligned() -> pd.DataFrame:
     df = pd.read_csv(_CSV, parse_dates=["date"]).sort_values("date")
     return df
@@ -48,9 +45,7 @@ def _target_series() -> pd.Series:
     return s.interpolate(method="time").ffill().bfill()
 
 
-# ---------------------------------------------------------------------------
 # TOOLS  (imported lazily so the module loads even before langchain is installed)
-# ---------------------------------------------------------------------------
 def _build_tools():
     from langchain_core.tools import tool
 

@@ -22,7 +22,7 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "field
 class FieldConfig:
     raw: dict[str, Any]
 
-    # ---- convenience accessors -------------------------------------------------
+    # Convenience accessors
     @property
     def name(self) -> str:
         return self.raw["field"]["name"]

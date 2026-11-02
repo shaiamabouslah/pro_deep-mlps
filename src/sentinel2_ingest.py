@@ -137,9 +137,7 @@ def compute_indices_for_scene(band_arrays: dict[str, np.ndarray]) -> dict[str, n
     }
 
 
-# ---------------------------------------------------------------------------
 # Band reading (COG windowed read over the field bbox)
-# ---------------------------------------------------------------------------
 def _href_to_gdal_path(href: str) -> str:
     """Map a STAC asset href to a GDAL virtual path GDAL can open."""
     if href.startswith("s3://"):

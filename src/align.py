@@ -15,9 +15,6 @@ from .config_loader import FieldConfig
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# per-source daily reducers
-# ---------------------------------------------------------------------------
 def _weather_to_daily(weather_df: pd.DataFrame) -> pd.DataFrame:
     """Hourly Open-Meteo weather/soil -> one row per day."""
     df = weather_df.copy()
@@ -109,9 +106,6 @@ def _satellite_to_daily(sat_df: pd.DataFrame, master_dates: pd.DatetimeIndex,
     return s.reset_index()
 
 
-# ---------------------------------------------------------------------------
-# the alignment itself
-# ---------------------------------------------------------------------------
 def build_aligned_timeseries(
     cfg: FieldConfig,
     weather_df: pd.DataFrame | None = None,

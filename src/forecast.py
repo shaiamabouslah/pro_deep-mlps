@@ -24,9 +24,6 @@ TARGET = "soil_moisture_sensor_mean"
 QUANTILE_LEVELS = [round(0.1 * i, 1) for i in range(1, 10)]  # 0.1 ... 0.9
 
 
-# ---------------------------------------------------------------------------
-# data
-# ---------------------------------------------------------------------------
 def load_target_series(csv_path, target: str = TARGET) -> pd.Series:
     """Load the aligned table and return a clean, gap-free daily target series."""
     df = pd.read_csv(csv_path, parse_dates=["date"]).sort_values("date")
@@ -45,9 +42,6 @@ def split(series: pd.Series, horizon: int):
     return series.iloc[:-horizon], series.iloc[-horizon:]
 
 
-# ---------------------------------------------------------------------------
-# metrics
-# ---------------------------------------------------------------------------
 def rmse(y, yhat) -> float:
     return float(np.sqrt(np.mean((np.asarray(y) - np.asarray(yhat)) ** 2)))
 
@@ -100,9 +94,7 @@ def score(name, y_test, point, quantiles, y_train) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
 # models -- each returns (point_forecast[H], quantiles[H, K] or None)
-# ---------------------------------------------------------------------------
 def run_seasonal_naive(train: pd.Series, horizon: int, m: int = 7):
     """Repeat the last m-day block. Deterministic -> no quantiles."""
     last = train.values[-m:]
@@ -219,9 +211,6 @@ MODELS = {
 }
 
 
-# ---------------------------------------------------------------------------
-# plot
-# ---------------------------------------------------------------------------
 def plot_forecasts(train, test, points, quantiles, out_path, context_days: int = 60):
     """Actual vs each model's forecast, with an uncertainty band for the best
     probabilistic model. Saved as a PNG you can drop straight into the report."""
@@ -253,9 +242,6 @@ def plot_forecasts(train, test, points, quantiles, out_path, context_days: int =
     plt.close(fig)
 
 
-# ---------------------------------------------------------------------------
-# orchestration
-# ---------------------------------------------------------------------------
 def run_comparison(csv_path, horizon: int, out_dir) -> pd.DataFrame:
     series = load_target_series(csv_path)
     train, test = split(series, horizon)

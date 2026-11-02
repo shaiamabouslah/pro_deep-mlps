@@ -59,7 +59,7 @@ except Exception:
 
 st.set_page_config(page_title="AgriSat — Irrigation & Fertilisation", page_icon=None, layout="wide")
 
-# ============================================================ theme
+# Theme
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
@@ -176,7 +176,7 @@ SOIL_MODELS = [
                        "soil_moisture_1_to_3cm", "soil_moisture_0_to_1cm"]),
 ]
 
-# ---- inline vector iconography (no emoji) ----
+# Inline vector iconography (no emoji)
 _S = ('viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" '
       'stroke-linecap="round" stroke-linejoin="round"')
 ICON = {
@@ -223,7 +223,7 @@ def kpi_card(icon_key, label, value_html, pill_label, pill_color, extra=""):
             f'<span class="pill" style="--p:{pill_color}">{pill_label}</span>{extra}</div>')
 
 
-# ============================================================ data helpers
+# Data helpers
 def _soil_daily(lat, lon, model, varset, past_days, days):
     s = requests.get(API, params={"latitude": lat, "longitude": lon, "hourly": ",".join(varset),
                                    "models": model, "past_days": past_days, "forecast_days": days,
@@ -289,7 +289,7 @@ def geocode(name: str, count: int = 6):
         return []
 
 
-# ============================================================ rule engine
+# Rule engine
 def recommend(soil, soil_missing, anomaly, rain_next, et0_next, soil_fc_min=None, ndvi=None):
     bare = ndvi is not None and not pd.isna(ndvi) and ndvi < 0.20  # little/no active canopy
     if soil_missing:
@@ -422,7 +422,7 @@ def set_selection(lat, lon, bbox=None, zoom=12):
                             "centroid": (round(lon, 5), round(lat, 5))}
 
 
-# ============================================================ full pipeline (satellite)
+# Full pipeline (satellite)
 def make_zone_config(clat, clon, bbox, max_km=2.5, window_days=120, max_scenes=10):
     """Config for the on-demand satellite run. To keep it to a few minutes we
     (a) cap the read area to a field-sized box around the centre — a huge drawn
@@ -464,7 +464,7 @@ def run_full_pipeline(clat, clon, bbox):
     return res.get("aligned_daily"), str(path), res.get("iot_source"), zbbox, name
 
 
-# ============================================================ agent hooks
+# Agent hooks
 def _agent_from_csv(csv_path, clon, clat):
     import types
     import src.agent as agent
@@ -489,7 +489,7 @@ def agent_live(clat, clon):
     return _agent_from_csv(csv, clon, clat)
 
 
-# ============================================================ shared render
+# Shared render
 def render_results(clat, clon, *, soil_now, soil_missing, hist, ndvi, ndvi_available,
                    anomaly, source_label, agent_fn, soil_source, ndvi_map=None, map_bounds=None):
     rain_next, et0_next, soil_fc_min = forecast_bits(round(clat, 3), round(clon, 3))
@@ -509,7 +509,7 @@ def render_results(clat, clon, *, soil_now, soil_missing, hist, ndvi, ndvi_avail
     st.markdown('<div class="why"><div class="lbl">Pourquoi</div><ul>'
                 + "".join(f"<li>{r}</li>" for r in reasons) + '</ul></div>', unsafe_allow_html=True)
 
-    # ---- fertilization decision (second recommendation) ----
+    # Fertilization decision (second recommendation)
     fsev, fhead, freason = fertilize(ndvi_val, ndvi_available, soil_now, soil_missing)
     fc = FERT_COLOR[fsev]
     st.markdown(
@@ -590,7 +590,7 @@ def render_results(clat, clon, *, soil_now, soil_missing, hist, ndvi, ndvi_avail
         st.caption("Indices de végétation (NDVI) non calculés en mode rapide — lancez l'analyse "
                    "satellite complète pour les obtenir sur cette parcelle.")
 
-    # ---- per-pixel NDVI map overlay (satellite mode) ----
+    # Per-pixel NDVI map overlay (satellite mode)
     if ndvi_map and map_bounds and HAVE_MAP:
         st.markdown('<div class="eyebrow">Carte NDVI de la parcelle</div>', unsafe_allow_html=True)
         try:
@@ -621,7 +621,7 @@ def render_results(clat, clon, *, soil_now, soil_missing, hist, ndvi, ndvi_avail
                          "Vérifie que la clé GROQ_API_KEY est bien définie.")
 
 
-# ============================================================ header
+# Header
 st.markdown(f"""
 <div class="topbar">
   <div class="brandwrap">
@@ -631,12 +631,12 @@ st.markdown(f"""
   <div class="meta">Fusion satellite · météo · capteurs de sol<br>Couverture <b>mondiale</b></div>
 </div>""", unsafe_allow_html=True)
 
-# ============================================================ state
+# State
 st.session_state.setdefault("center", CFG_CENTER)
 st.session_state.setdefault("zoom", 11)
 st.session_state.setdefault("sel", None)
 
-# ---- STEP 1: search / examples ----
+# Step 1: search / examples
 st.markdown('<div class="rail"><span class="idx">01</span><span class="t">Localiser la parcelle</span>'
             '<span class="ln"></span></div>', unsafe_allow_html=True)
 sc1, sc2 = st.columns([5, 1])
@@ -653,7 +653,7 @@ if geo:
         st.session_state.geo = []
         st.rerun()
 
-# ---- STEP 2: draw ----
+# Step 2: draw
 st.markdown('<div class="rail"><span class="idx">02</span><span class="t">Délimiter la parcelle</span>'
             '<span class="ln"></span></div>', unsafe_allow_html=True)
 if HAVE_MAP:
@@ -686,7 +686,7 @@ else:
     hk = c3.number_input("Demi-côté (km)", value=1.5, min_value=0.2, max_value=10.0, step=0.5)
     st.session_state.sel = {"bbox": box_around(latv, lonv, hk), "centroid": (round(lonv, 5), round(latv, 5))}
 
-# ---- STEP 3: analyse ----
+# Step 3: analyse
 sel = st.session_state.sel
 st.markdown('<div class="rail"><span class="idx">03</span><span class="t">Lancer l\'analyse</span>'
             '<span class="ln"></span></div>', unsafe_allow_html=True)
@@ -719,7 +719,7 @@ if sel:
 else:
     st.info("Sélectionnez d'abord une parcelle (Étapes 1–2) pour activer l'analyse.")
 
-# ============================================================ RESULTS
+# RESULTS
 st.markdown('<hr>', unsafe_allow_html=True)
 mode = st.session_state.get("mode")
 asel = st.session_state.get("analyzed")

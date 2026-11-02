@@ -18,18 +18,16 @@ logger = logging.getLogger(__name__)
 STRESS = 0.20        # m3/m3 -- below this the crop is water-stressed
 COMFORT = 0.30       # above this soil moisture is comfortable
 
-# ---------------------------------------------------------------------------
 # 1. Labelled decision scenarios
 #    action in {"irriguer","attendre","surveiller"}
 #    fields: soil_now, soil_fc (7-day forecast), rain (mm/7d), et0 (mm/7d),
 #            ndvi, ndvi_mean, ndvi_std, tag, expected, why
-# ---------------------------------------------------------------------------
 def _s(id, tag, soil_now, soil_fc, rain, et0, ndvi, ndvi_mean, ndvi_std, expected, why):
     return dict(id=id, tag=tag, soil_now=soil_now, soil_fc=soil_fc, rain=rain, et0=et0,
                 ndvi=ndvi, ndvi_mean=ndvi_mean, ndvi_std=ndvi_std, expected=expected, why=why)
 
 SCENARIOS = [
-    # --- easy / unambiguous (both the agent and the naive rule should get these) ---
+    # Easy / unambiguous (both the agent and the naive rule should get these)
     _s("E1", "easy", 0.38, 0.36, 18, 20, 0.62, 0.60, 0.05, "attendre",
        "soil comfortable and stable, rain covers demand"),
     _s("E2", "easy", 0.16, 0.14, 2, 34, 0.40, 0.55, 0.06, "irriguer",
@@ -37,35 +35,35 @@ SCENARIOS = [
     _s("E3", "easy", 0.33, 0.31, 25, 18, 0.58, 0.57, 0.05, "attendre",
        "comfortable, heavy rain incoming"),
 
-    # --- forecast-driven: comfortable NOW but heading into stress (naive rule MISSES) ---
+    # Forecast-driven: comfortable NOW but heading into stress (naive rule MISSES)
     _s("F1", "forecast", 0.31, 0.19, 3, 33, 0.50, 0.52, 0.05, "irriguer",
        "comfortable now but forecast drops below stress, dry + high ET0"),
     _s("F2", "forecast", 0.29, 0.21, 4, 30, 0.48, 0.50, 0.05, "irriguer",
        "marginal, forecast to stress edge, little rain, high demand"),
 
-    # --- rain-saves-it: low NOW but big rain coming (naive rule OVER-irrigates) ---
+    # Rain-saves-it: low NOW but big rain coming (naive rule OVER-irrigates)
     _s("R1", "rain", 0.22, 0.30, 28, 16, 0.51, 0.52, 0.05, "attendre",
        "marginal now but strong rain will recharge; don't waste water"),
     _s("R2", "rain", 0.19, 0.28, 22, 15, 0.47, 0.49, 0.05, "attendre",
        "stressed now but heavy rain imminent -> wait and re-check"),
 
-    # --- NDVI anomaly: canopy stress but soil is fine (water isn't the problem) ---
+    # NDVI anomaly: canopy stress but soil is fine (water isn't the problem)
     _s("A1", "anomaly", 0.34, 0.33, 12, 19, 0.30, 0.55, 0.06, "surveiller",
        "clear NDVI anomaly but soil comfortable -> investigate (pest/nutrient), not irrigation"),
 
-    # --- heatwave stress-test: very high ET0 pulling soil down fast ---
+    # Heatwave stress-test: very high ET0 pulling soil down fast
     _s("H1", "heatwave", 0.27, 0.18, 1, 45, 0.49, 0.50, 0.05, "irriguer",
        "heatwave: extreme ET0, soil crashing into stress, no rain"),
 
-    # --- drought onset stress-test: steady decline, persistent dryness ---
+    # Drought onset stress-test: steady decline, persistent dryness
     _s("D1", "drought_onset", 0.24, 0.17, 0, 32, 0.44, 0.50, 0.06, "irriguer",
        "drought onset: monotonic drydown to stress, zero rain"),
 
-    # --- sensor dropout stress-test: soil reading missing/unreliable ---
+    # Sensor dropout stress-test: soil reading missing/unreliable
     _s("S1", "sensor_dropout", None, None, 5, 28, 0.50, 0.51, 0.05, "surveiller",
        "soil sensor missing -> cannot confidently decide; monitor / restore sensor before acting"),
 
-    # --- conflicting signals stress-test: low NDVI but HIGH soil moisture ---
+    # Conflicting signals stress-test: low NDVI but HIGH soil moisture
     _s("C1", "conflicting", 0.36, 0.34, 8, 22, 0.28, 0.54, 0.06, "surveiller",
        "low NDVI (stress) but soil is wet -> not water stress; investigate before irrigating"),
     _s("C2", "conflicting", 0.18, 0.17, 0, 20, 0.60, 0.58, 0.05, "irriguer",
@@ -75,9 +73,7 @@ SCENARIOS = [
 ACTIONS = ("irriguer", "attendre", "surveiller")
 
 
-# ---------------------------------------------------------------------------
 # 2. Baselines / parsing
-# ---------------------------------------------------------------------------
 def naive_baseline(sc: dict) -> str:
     """Ignores forecast, weather and NDVI: irrigate iff current soil < 0.25."""
     if sc["soil_now"] is None:
@@ -104,9 +100,7 @@ def parse_action(text: str) -> str | None:
     return None
 
 
-# ---------------------------------------------------------------------------
 # 3. Scenario-backed tools + agent runner
-# ---------------------------------------------------------------------------
 def build_scenario_tools(sc: dict):
     """Four @tool functions that return THIS scenario's numbers -- same names and
     contract as src/agent.py, so the agent tool-calls identically."""
@@ -172,9 +166,7 @@ def run_agent_on_scenario(sc: dict, model_name: str, backend: str = "ollama"):
     return parse_action(text), len(set(called)), all_four, text
 
 
-# ---------------------------------------------------------------------------
 # 4. Main
-# ---------------------------------------------------------------------------
 def main():
     p = argparse.ArgumentParser(description="Agent decision-quality evaluation")
     p.add_argument("--backend", default="ollama", choices=["ollama", "groq"],
@@ -236,12 +228,10 @@ def main():
               f"{len(gained)}  ({', '.join(gained['id']) or '-'})")
         print(f"Cases the naive rule gets right that the agent gets wrong: "
               f"{len(lost)}  ({', '.join(lost['id']) or '-'})")
-        # stress-test breakdown
         stress = df[df.tag.isin(["heatwave", "drought_onset", "sensor_dropout", "conflicting"])]
         if len(stress):
             print(f"\nStress-test accuracy (heatwave/drought/dropout/conflicting): "
                   f"{stress['agent_correct'].mean():.0%}  ({stress['agent_correct'].sum()}/{len(stress)})")
-        # confusion matrix
         print("\nConfusion (rows=expected, cols=agent):")
         print(pd.crosstab(df["expected"], df["agent"]).to_string())
     else:
