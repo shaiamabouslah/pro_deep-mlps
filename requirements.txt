@@ -22,6 +22,12 @@ neuralforecast>=1.7
 chronos-forecasting>=2.0
 matplotlib>=3.7
 
+# --- experiment tracking ---
+mlflow>=3.0
+
+# --- tests ---
+pytest>=8.0
+
 # --- agent ---
 langgraph>=0.2.0
 langchain-core>=0.3.0

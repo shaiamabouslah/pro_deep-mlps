@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from . import tracking
 from .config_loader import load_config
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -249,10 +251,13 @@ def run_comparison(csv_path, horizon: int, out_dir) -> pd.DataFrame:
                 TARGET, len(series), len(train), len(test), horizon)
 
     rows, points, quantiles = [], {}, {}
+    runtimes, skipped = {}, {}
     for name, fn in MODELS.items():
         try:
             logger.info("Running %s ...", name)
+            t0 = time.perf_counter()
             point, q = fn(train, horizon)
+            runtimes[name] = time.perf_counter() - t0
             point = np.asarray(point, dtype=float)[:horizon]
             if point.shape[0] != horizon or not np.all(np.isfinite(point)):
                 raise ValueError(f"bad output shape/values ({point.shape})")
@@ -270,6 +275,7 @@ def run_comparison(csv_path, horizon: int, out_dir) -> pd.DataFrame:
                         "" if r["probabilistic"] else "  (deterministic: CRPS=MAE)")
         except Exception as e:
             logger.warning("  SKIPPED %s: %s: %s", name, type(e).__name__, e)
+            skipped[name] = f"{type(e).__name__}: {e}"
 
     if not rows:
         raise RuntimeError("No model produced a forecast -- check installs (see WEEK3_FORECAST.md).")
@@ -295,6 +301,17 @@ def run_comparison(csv_path, horizon: int, out_dir) -> pd.DataFrame:
     except Exception as e:
         logger.warning("Plot skipped (%s: %s) -- try `pip install matplotlib`", type(e).__name__, e)
         plotted = False
+
+    params = {"horizon": horizon, "train_days": len(train), "test_days": len(test), "target": TARGET}
+    field = tracking.field_name(csv_path)
+    with tracking.study_run("forecast", field, params, tags={"field": field}):
+        for r in rows:
+            metrics = {k: r[k] for k in tracking.METRICS} | {"runtime_s": runtimes[r["model"]]}
+            tracking.log_model(r["model"], metrics, tags={"probabilistic": str(r["probabilistic"])})
+        for name, error in skipped.items():
+            tracking.log_skipped(name, error)
+        tracking.set_tags({"best_model": results.iloc[0]["model"]})
+        tracking.log_artifacts(out_dir / "forecast_metrics.csv", out_dir / "forecast_predictions.csv", png)
 
     print("\n=== Forecast comparison (lower is better) ===")
     print(results.to_string(index=False))

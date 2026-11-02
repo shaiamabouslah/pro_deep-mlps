@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from . import tracking
 from .config_loader import load_config
 from .forecast import MODELS, QUANTILE_LEVELS, load_target_series, score
 
@@ -36,13 +38,15 @@ def sliding_backtest(csv_path, horizon: int, n_windows: int, step: int, out_dir)
     logger.info("Backtest: %d windows x %d models, horizon %d, step %d",
                 len(folds), len(MODELS), horizon, step)
 
-    records = []
+    records, runtimes, skipped = [], {}, {}
     for train, test, wi in folds:
         logger.info("--- window %d: test %s -> %s ---", wi,
                     test.index[0].date(), test.index[-1].date())
         for name, fn in MODELS.items():
             try:
+                t0 = time.perf_counter()
                 point, q = fn(train, horizon)
+                runtimes[(name, wi)] = time.perf_counter() - t0
                 point = np.asarray(point, float)[:horizon]
                 if not (point.shape[0] == horizon and np.all(np.isfinite(point))):
                     raise ValueError(f"bad output {point.shape}")
@@ -57,6 +61,7 @@ def sliding_backtest(csv_path, horizon: int, n_windows: int, step: int, out_dir)
                             name, rec["MASE"], rec["RMSE"], rec["CRPS"])
             except Exception as e:
                 logger.warning("   SKIPPED %s (window %d): %s: %s", name, wi, type(e).__name__, e)
+                skipped.setdefault(name, []).append(f"window {wi}: {type(e).__name__}: {e}")
 
     if not records:
         raise RuntimeError("Backtest produced no results -- check installs.")
@@ -79,6 +84,24 @@ def sliding_backtest(csv_path, horizon: int, n_windows: int, step: int, out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     per_window.to_csv(out_dir / "backtest_per_window.csv", index=False)
     agg.to_csv(out_dir / "backtest_summary.csv", index=False)
+
+    params = {"horizon": horizon, "windows_requested": n_windows, "windows_used": len(folds), "step_days": step}
+    field = tracking.field_name(csv_path)
+    with tracking.study_run("backtest", field, params, tags={"field": field}):
+        for _, row in agg.iterrows():
+            model = row["model"]
+            model_windows = per_window[per_window["model"] == model]
+            steps = [(int(w["window"]), {"MASE": w["MASE"], "RMSE": w["RMSE"], "CRPS": w["CRPS"],
+                                         "runtime_s": runtimes[(model, int(w["window"]))]})
+                     for _, w in model_windows.iterrows()]
+            summary = {c: row[c] for c in agg.columns if c.endswith(("_mean", "_std")) and pd.notna(row[c])}
+            summary["runtime_s_mean"] = float(np.mean([m["runtime_s"] for _, m in steps]))
+            tags = {"skipped_windows": str(len(skipped.get(model, [])))}
+            tracking.log_model(model, summary, steps=steps, tags=tags)
+        for name in set(skipped) - set(agg["model"]):
+            tracking.log_skipped(name, " | ".join(skipped[name]))
+        tracking.set_tags({"best_model": agg.iloc[0]["model"]})
+        tracking.log_artifacts(out_dir / "backtest_per_window.csv", out_dir / "backtest_summary.csv")
 
     print("\n=== Sliding-origin backtest (mean over windows, lower is better) ===")
     print(agg.to_string(index=False))

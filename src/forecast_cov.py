@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from . import tracking
 from .config_loader import load_config
 from .forecast import (QUANTILE_LEVELS, _extract_quantiles, run_chronos, run_nhits,
                        run_seasonal_naive, run_timesfm, score)
@@ -105,12 +107,14 @@ def run_comparison(csv_path, horizon, out_dir) -> pd.DataFrame:
                 len(train_df), len(test_df), _present(df, FUTURE_COVS), _present(df, PAST_COVS))
 
     y_train, y_test = train_s.values, test_s.values
-    rows = []
+    rows, runtimes, skipped = [], {}, {}
 
     def add(label, fn):
         try:
             logger.info("Running %s ...", label)
+            t0 = time.perf_counter()
             point, q = fn()
+            runtimes[label] = time.perf_counter() - t0
             point = np.asarray(point, float)[:horizon]
             if not (point.shape[0] == horizon and np.all(np.isfinite(point))):
                 raise ValueError(f"bad output {point.shape}")
@@ -123,6 +127,7 @@ def run_comparison(csv_path, horizon, out_dir) -> pd.DataFrame:
             logger.info("   %-16s MASE=%.3f RMSE=%.4f CRPS=%.4f", label, r["MASE"], r["RMSE"], r["CRPS"])
         except Exception as e:
             logger.warning("   SKIPPED %s: %s: %s", label, type(e).__name__, e)
+            skipped[label] = f"{type(e).__name__}: {e}"
 
     # reference + univariate
     add("seasonal_naive", lambda: run_seasonal_naive(train_s, horizon))
@@ -139,6 +144,20 @@ def run_comparison(csv_path, horizon, out_dir) -> pd.DataFrame:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     results.to_csv(out_dir / "forecast_cov_metrics.csv", index=False)
+
+    params = {"horizon": horizon, "train_days": len(train_df), "test_days": len(test_df),
+              "future_covariates": ",".join(_present(df, FUTURE_COVS)) or "none",
+              "past_covariates": ",".join(_present(df, PAST_COVS)) or "none"}
+    field = tracking.field_name(csv_path)
+    with tracking.study_run("forecast_covariates", field, params, tags={"field": field}):
+        for r in rows:
+            metrics = {k: r[k] for k in tracking.METRICS} | {"runtime_s": runtimes[r["model"]]}
+            tracking.log_model(r["model"], metrics, tags={"probabilistic": str(r["probabilistic"]),
+                                                          "uses_covariates": str(r["model"].endswith("+cov"))})
+        for label, error in skipped.items():
+            tracking.log_skipped(label, error)
+        tracking.set_tags({"best_model": results.iloc[0]["model"]})
+        tracking.log_artifacts(out_dir / "forecast_cov_metrics.csv")
 
     print("\n=== Univariate vs +covariate (lower is better) ===")
     print(results.to_string(index=False))

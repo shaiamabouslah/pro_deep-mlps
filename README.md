@@ -38,6 +38,17 @@ python -m src.gapfill       --config config/field_config.yaml --gap-len 5
 # Cross-climate comparison (add config/field_*.yaml per field)
 python run_multifield.py config/field_config.yaml config/field_spain.yaml
 
+# Multi-station training table from an ISMN archive (surface 0-10 cm soil moisture
+# + Open-Meteo weather + per-station validation report), written to
+# data/processed/global/<archive>/ and logged to the MLflow "dataset" experiment
+python -m src.global_dataset --archive data/raw/spain.zip --start 2025-08-24 --end 2026-08-24
+
+# Experiment tracking UI (forecast, backtest, covariate and dataset runs)
+mlflow ui --backend-store-uri sqlite:///mlflow.db --workers 1
+
+# Tests
+python -m pytest -q
+
 # Fusion agent (local or hosted backend)
 python -m src.agent --backend groq --model openai/gpt-oss-120b
 
